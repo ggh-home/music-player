@@ -18,7 +18,7 @@ import toast from "react-hot-toast";
 export default function AudiobooksPage() {
   const { isAuthenticated } = useAuthStore();
   const { setCurrentEpisode, setIsPlaying } = usePlayerStore();
-  
+
   const [collectedBooks, setCollectedBooks] = useState<Audiobook[]>([]);
   const [cachedEpisodes, setCachedEpisodes] = useState<AudioEpisode[]>([]);
   const [recommendedBooks, setRecommendedBooks] = useState<Audiobook[]>([]);
@@ -35,15 +35,15 @@ export default function AudiobooksPage() {
         // 加载收藏的有声书
         const collectedRes = await audiobookApi.getCollectedAudiobooks();
         setCollectedBooks(collectedRes.data.data || []);
-        
+
         // 加载缓存的音频
         const cachedRes = await audiobookApi.getCachedAudios();
         setCachedEpisodes(cachedRes.data.data || []);
       }
-      
+
       // 加载推荐有声书
-      const recommendedRes = await searchApi.searchAudiobooks("热门");
-      setRecommendedBooks(recommendedRes.data.data?.slice(0, 6) || []);
+      // const recommendedRes = await searchApi.searchAudiobooks("热门");
+      // setRecommendedBooks(recommendedRes.data.data?.slice(0, 6) || []);
     } catch (error) {
       console.error("加载有声书数据失败", error);
     } finally {
@@ -62,7 +62,7 @@ export default function AudiobooksPage() {
       toast.error("请先登录");
       return;
     }
-    
+
     try {
       if (isCollected) {
         await audiobookApi.uncollectAudiobook(bookId);
@@ -113,10 +113,18 @@ export default function AudiobooksPage() {
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                 {collectedBooks.map((book) => (
-                  <Card key={book.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+                  <Card
+                    key={book.id}
+                    className="overflow-hidden hover:shadow-lg transition-shadow"
+                  >
                     <div className="relative aspect-square">
                       {book.cover ? (
-                        <Image src={book.cover} alt={book.name} fill className="object-cover" />
+                        <Image
+                          src={book.cover}
+                          alt={book.name}
+                          fill
+                          className="object-cover"
+                        />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-amber-500 to-orange-500">
                           <BookOpen className="h-10 w-10 text-white" />
@@ -133,10 +141,12 @@ export default function AudiobooksPage() {
                     </div>
                     <CardContent className="p-3">
                       <p className="font-medium truncate">{book.name}</p>
-                      <p className="text-sm text-muted-foreground">{book.episodeCount}集</p>
+                      <p className="text-sm text-muted-foreground">
+                        {book.episodeCount}集
+                      </p>
                       {book.playProgress && book.episodeCount && (
-                        <Progress 
-                          value={(book.playProgress / book.episodeCount) * 100} 
+                        <Progress
+                          value={(book.playProgress / book.episodeCount) * 100}
                           className="mt-2 h-1"
                         />
                       )}
@@ -173,7 +183,9 @@ export default function AudiobooksPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">{episode.name}</p>
-                      <p className="text-sm text-muted-foreground truncate">{episode.albumName}</p>
+                      <p className="text-sm text-muted-foreground truncate">
+                        {episode.albumName}
+                      </p>
                     </div>
                     <span className="text-sm text-muted-foreground">
                       {formatDuration(episode.duration)}
@@ -196,10 +208,18 @@ export default function AudiobooksPage() {
             <h2 className="text-lg font-semibold">热门推荐</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {recommendedBooks.map((book) => (
-                <Card key={book.id} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
+                <Card
+                  key={book.id}
+                  className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                >
                   <div className="relative aspect-square">
                     {book.cover ? (
-                      <Image src={book.cover} alt={book.name} fill className="object-cover" />
+                      <Image
+                        src={book.cover}
+                        alt={book.name}
+                        fill
+                        className="object-cover"
+                      />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-amber-500 to-orange-500">
                         <BookOpen className="h-10 w-10 text-white" />
@@ -216,7 +236,9 @@ export default function AudiobooksPage() {
                   </div>
                   <CardContent className="p-3">
                     <p className="font-medium truncate">{book.name}</p>
-                    <p className="text-sm text-muted-foreground">{book.episodeCount}集</p>
+                    <p className="text-sm text-muted-foreground">
+                      {book.episodeCount}集
+                    </p>
                   </CardContent>
                 </Card>
               ))}

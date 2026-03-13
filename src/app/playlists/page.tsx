@@ -6,7 +6,13 @@ import Link from "next/link";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Plus, Disc, Import, ExternalLink } from "lucide-react";
@@ -16,7 +22,7 @@ import { useAuthStore } from "@/stores";
 import toast from "react-hot-toast";
 
 export default function PlaylistsPage() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   const [myPlaylists, setMyPlaylists] = useState<Playlist[]>([]);
   const [collectedPlaylists, setCollectedPlaylists] = useState<Playlist[]>([]);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -27,17 +33,20 @@ export default function PlaylistsPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      loadPlaylists();
+      loadPlaylists("my");
     }
   }, [isAuthenticated]);
 
-  const loadPlaylists = async () => {
+  const loadPlaylists = async (type: any) => {
     try {
-      const myRes = await playlistApi.getMyPlaylists();
-      setMyPlaylists(myRes.data.data || []);
-      
+      // 一行判断：my→CUSTOM，其他→FAVORITE
+      const playListType = type === "my" ? "CUSTOM" : "FAVORITE";
+
+      const myRes = await playlistApi.getMyPlaylists(playListType);
+      setMyPlaylists(myRes.data.result || []);
+
       const collectedRes = await playlistApi.getCollectedPlaylists();
-      setCollectedPlaylists(collectedRes.data.data || []);
+      setCollectedPlaylists(collectedRes.data.result || []);
     } catch (error) {
       toast.error("加载歌单失败");
     }
@@ -48,13 +57,15 @@ export default function PlaylistsPage() {
       toast.error("请输入歌单名称");
       return;
     }
-    
+
     try {
-      await playlistApi.createPlaylist({ name: newPlaylistName });
+      await playlistApi.createPlaylist({
+        playListName: newPlaylistName,
+      });
       toast.success("创建成功");
       setNewPlaylistName("");
       setIsCreateDialogOpen(false);
-      loadPlaylists();
+      loadPlaylists("my");
     } catch (error) {
       toast.error("创建失败");
     }
@@ -65,13 +76,13 @@ export default function PlaylistsPage() {
       toast.error("请输入歌单链接");
       return;
     }
-    
+
     try {
       await playlistApi.importPlaylist(importPlatform, importUrl);
       toast.success("导入成功");
       setImportUrl("");
       setIsImportDialogOpen(false);
-      loadPlaylists();
+      loadPlaylists("my");
     } catch (error) {
       toast.error("导入失败");
     }
@@ -96,7 +107,10 @@ export default function PlaylistsPage() {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">歌单</h1>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsImportDialogOpen(true)}
+            >
               <Import className="h-4 w-4 mr-2" />
               导入
             </Button>
@@ -109,8 +123,12 @@ export default function PlaylistsPage() {
 
         <Tabs defaultValue="my">
           <TabsList>
-            <TabsTrigger value="my">我的歌单 ({myPlaylists.length})</TabsTrigger>
-            <TabsTrigger value="collected">收藏歌单 ({collectedPlaylists.length})</TabsTrigger>
+            <TabsTrigger value="my">
+              我的歌单 ({myPlaylists.length})
+            </TabsTrigger>
+            <TabsTrigger value="collected">
+              收藏歌单 ({collectedPlaylists.length})
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="my" className="space-y-4">
@@ -129,7 +147,12 @@ export default function PlaylistsPage() {
                     <Card className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
                       <div className="relative aspect-square">
                         {playlist.cover ? (
-                          <Image src={playlist.cover} alt={playlist.name} fill className="object-cover" />
+                          <Image
+                            src={playlist.cover}
+                            alt={playlist.playListName}
+                            fill
+                            className="object-cover"
+                          />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500">
                             <Disc className="h-10 w-10 text-white" />
@@ -137,8 +160,12 @@ export default function PlaylistsPage() {
                         )}
                       </div>
                       <CardContent className="p-3">
-                        <p className="font-medium truncate">{playlist.name}</p>
-                        <p className="text-sm text-muted-foreground">{playlist.songCount}首</p>
+                        <p className="font-medium truncate">
+                          {playlist.playListName}
+                        </p>
+                        {/* <p className="text-sm text-muted-foreground">
+                          {playlist.songCount}首
+                        </p> */}
                       </CardContent>
                     </Card>
                   </Link>
@@ -159,7 +186,12 @@ export default function PlaylistsPage() {
                     <Card className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
                       <div className="relative aspect-square">
                         {playlist.cover ? (
-                          <Image src={playlist.cover} alt={playlist.name} fill className="object-cover" />
+                          <Image
+                            src={playlist.cover}
+                            alt={playlist.playListName}
+                            fill
+                            className="object-cover"
+                          />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center bg-muted">
                             <Disc className="h-10 w-10 text-muted-foreground" />
@@ -167,8 +199,12 @@ export default function PlaylistsPage() {
                         )}
                       </div>
                       <CardContent className="p-3">
-                        <p className="font-medium truncate">{playlist.name}</p>
-                        <p className="text-sm text-muted-foreground">by {playlist.creator}</p>
+                        <p className="font-medium truncate">
+                          {playlist.playListName}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          by {playlist.creator}
+                        </p>
                       </CardContent>
                     </Card>
                   </Link>
@@ -194,7 +230,10 @@ export default function PlaylistsPage() {
               onKeyDown={(e) => e.key === "Enter" && handleCreatePlaylist()}
             />
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+              <Button
+                variant="outline"
+                onClick={() => setIsCreateDialogOpen(false)}
+              >
                 取消
               </Button>
               <Button onClick={handleCreatePlaylist}>创建</Button>
@@ -236,7 +275,10 @@ export default function PlaylistsPage() {
               支持导入QQ音乐和网易云音乐的歌单链接
             </p>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsImportDialogOpen(false)}>
+              <Button
+                variant="outline"
+                onClick={() => setIsImportDialogOpen(false)}
+              >
                 取消
               </Button>
               <Button onClick={handleImportPlaylist}>导入</Button>

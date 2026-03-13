@@ -43,7 +43,7 @@ export default function ArtistsPage() {
 
   const handleSearch = async () => {
     if (!searchKeyword.trim()) return;
-    
+
     setIsSearching(true);
     try {
       const res = await searchApi.searchSingers(searchKeyword);
@@ -55,7 +55,11 @@ export default function ArtistsPage() {
     }
   };
 
-  const artistsToShow = searchKeyword.trim() ? searchResults : followedArtists.length > 0 ? followedArtists : recommendedArtists;
+  const artistsToShow = searchKeyword.trim()
+    ? searchResults
+    : followedArtists.length > 0
+      ? followedArtists
+      : recommendedArtists;
 
   return (
     <MainLayout>
@@ -82,7 +86,11 @@ export default function ArtistsPage() {
         {/* Artists Grid */}
         <div>
           <h2 className="text-lg font-semibold mb-4">
-            {searchKeyword.trim() ? "搜索结果" : followedArtists.length > 0 ? "关注的歌手" : "推荐歌手"}
+            {searchKeyword.trim()
+              ? "搜索结果"
+              : followedArtists.length > 0
+                ? "关注的歌手"
+                : "推荐歌手"}
           </h2>
           {artistsToShow.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
@@ -91,21 +99,32 @@ export default function ArtistsPage() {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {artistsToShow.map((artist) => (
-                <Link key={artist.id} href={`/artist/${artist.id}`}>
+                <Link key={artist.singerId} href={`/artist/${artist.singerId}`}>
                   <Card className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
                     <div className="relative aspect-square">
                       {artist.avatar ? (
-                        <Image src={artist.avatar} alt={artist.name} fill className="object-cover" />
+                        <Image
+                          src={artist.avatar}
+                          alt={artist.singerName}
+                          fill
+                          className="object-cover"
+                        />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500">
-                          <span className="text-4xl font-bold text-white">{artist.name[0]}</span>
+                          <span className="text-4xl font-bold text-white">
+                            {artist.singerName[0]}
+                          </span>
                         </div>
                       )}
                     </div>
                     <CardContent className="p-3 text-center">
-                      <p className="font-medium truncate">{artist.name}</p>
+                      <p className="font-medium truncate">
+                        {artist.singerName}
+                      </p>
                       {artist.songCount && (
-                        <p className="text-sm text-muted-foreground">{artist.songCount}首歌曲</p>
+                        <p className="text-sm text-muted-foreground">
+                          {artist.songCount}首歌曲
+                        </p>
                       )}
                     </CardContent>
                   </Card>
@@ -120,7 +139,18 @@ export default function ArtistsPage() {
           <div>
             <h2 className="text-lg font-semibold mb-4">热门歌手</h2>
             <div className="flex flex-wrap gap-2">
-              {["周杰伦", "林俊杰", "陈奕迅", "薛之谦", "邓紫棋", "李荣浩", "毛不易", "张学友", "刘德华", "王菲"].map((name) => (
+              {[
+                "周杰伦",
+                "林俊杰",
+                "陈奕迅",
+                "薛之谦",
+                "邓紫棋",
+                "李荣浩",
+                "毛不易",
+                "张学友",
+                "刘德华",
+                "王菲",
+              ].map((name) => (
                 <Button
                   key={name}
                   variant="secondary"

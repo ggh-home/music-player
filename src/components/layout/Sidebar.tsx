@@ -31,13 +31,11 @@ const libraryNavItems = [
   { icon: Heart, label: "我喜欢的", href: "/liked" },
   { icon: Disc, label: "歌单", href: "/playlists" },
   { icon: Mic2, label: "歌手", href: "/artists" },
-  { icon: BookOpen, label: "有声书", href: "/audiobooks" },
+  // { icon: BookOpen, label: "有声书", href: "/audiobooks" },
   { icon: Download, label: "下载管理", href: "/downloads" },
 ];
 
-const bottomNavItems = [
-  { icon: Settings, label: "设置", href: "/settings" },
-];
+const bottomNavItems = [{ icon: Settings, label: "设置", href: "/settings" }];
 
 interface SidebarProps {
   className?: string;
@@ -59,7 +57,7 @@ export function Sidebar({ className }: SidebarProps) {
       className={cn(
         "flex flex-col border-r bg-card transition-all duration-300",
         collapsed ? "w-16" : "w-64",
-        className
+        className,
       )}
     >
       {/* Logo */}
@@ -98,7 +96,7 @@ export function Sidebar({ className }: SidebarProps) {
                 variant={isActive(item.href) ? "secondary" : "ghost"}
                 className={cn(
                   "w-full justify-start gap-3",
-                  collapsed && "justify-center px-2"
+                  collapsed && "justify-center px-2",
                 )}
                 asChild
               >
@@ -123,7 +121,7 @@ export function Sidebar({ className }: SidebarProps) {
                 variant={isActive(item.href) ? "secondary" : "ghost"}
                 className={cn(
                   "w-full justify-start gap-3",
-                  collapsed && "justify-center px-2"
+                  collapsed && "justify-center px-2",
                 )}
                 asChild
               >
@@ -145,7 +143,7 @@ export function Sidebar({ className }: SidebarProps) {
             variant={isActive(item.href) ? "secondary" : "ghost"}
             className={cn(
               "w-full justify-start gap-3",
-              collapsed && "justify-center px-2"
+              collapsed && "justify-center px-2",
             )}
             asChild
           >

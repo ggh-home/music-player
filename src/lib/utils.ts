@@ -19,7 +19,7 @@ export function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const mins = Math.floor((seconds % 3600) / 60);
   const secs = Math.floor(seconds % 60);
-  
+
   if (hours > 0) {
     return `${hours}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   }
@@ -105,4 +105,53 @@ export function formatFileSize(bytes: number): string {
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
+
+/**
+ * 歌词行类型
+ */
+export interface LyricLine {
+  time: number;    // 时间（秒，支持小数，如 85.23）
+  text: string;    // 歌词内容
+}
+
+/**
+ * 解析 LRC 歌词文本 → 标准歌词数组
+ * @param lrcText LRC 格式原始字符串
+ * @returns 按时间升序排列的 LyricLine[]
+ */
+export function parseLRC(lrcText: string): LyricLine[] {
+  if (!lrcText || typeof lrcText !== "string") return [];
+
+  const lines = lrcText.split(/\r?\n/);
+  const result: LyricLine[] = [];
+
+  // 匹配 [01:23.45] 或 [01:23]
+  const timeRegex = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?]/g;
+
+  for (const line of lines) {
+    const trimLine = line.trim();
+    if (!trimLine) continue;
+
+    // 提取所有时间标签
+    const timeMatches = [...trimLine.matchAll(timeRegex)];
+    if (timeMatches.length === 0) continue;
+
+    // 提取歌词文本（去掉所有时间标签）
+    const text = trimLine.replace(timeRegex, "").trim();
+    if (!text) continue;
+
+    // 把每个时间标签转成秒
+    for (const match of timeMatches) {
+      const min = parseInt(match[1], 10);
+      const sec = parseInt(match[2], 10);
+      const ms = match[3] ? parseInt(match[3].padEnd(3, "0").slice(0, 3), 10) : 0;
+      const time = min * 60 + sec + ms / 1000;
+
+      result.push({ time, text });
+    }
+  }
+
+  // 按时间从小到大排序
+  return result.sort((a, b) => a.time - b.time);
 }

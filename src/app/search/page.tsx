@@ -18,43 +18,43 @@ import toast from "react-hot-toast";
 export default function SearchPage() {
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
-  
+
   const [keyword, setKeyword] = useState(initialQuery);
   const [searchKeyword, setSearchKeyword] = useState(initialQuery);
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const [songs, setSongs] = useState<Song[]>([]);
   const [singers, setSingers] = useState<Singer[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [audiobooks, setAudiobooks] = useState<Audiobook[]>([]);
-  
+
   const { history, addHistory, removeHistory, clearHistory } = useSearchStore();
   const { setCurrentSong, setIsPlaying, addToQueue } = usePlayerStore();
 
   // 执行搜索
   const handleSearch = async (searchWord: string = keyword) => {
     if (!searchWord.trim()) return;
-    
+
     setIsLoading(true);
     setSearchKeyword(searchWord);
     addHistory(searchWord, "song");
-    
+
     try {
       // 搜索歌曲
       const songsRes = await searchApi.searchSongs(searchWord);
-      setSongs(songsRes.data.data || []);
-      
+      setSongs(songsRes.data.result || []);
+
       // 搜索歌手
       const singersRes = await searchApi.searchSingers(searchWord);
-      setSingers(singersRes.data.data || []);
-      
+      setSingers(singersRes.data.result || []);
+
       // 搜索歌单
       const playlistsRes = await searchApi.searchPlaylists(searchWord);
-      setPlaylists(playlistsRes.data.data || []);
-      
+      setPlaylists(playlistsRes.data.result || []);
+
       // 搜索有声书
-      const audiobooksRes = await searchApi.searchAudiobooks(searchWord);
-      setAudiobooks(audiobooksRes.data.data || []);
+      // const audiobooksRes = await searchApi.searchAudiobooks(searchWord);
+      // setAudiobooks(audiobooksRes.data.data || []);
     } catch (error) {
       toast.error("搜索失败");
     } finally {
@@ -70,10 +70,33 @@ export default function SearchPage() {
   }, [initialQuery]);
 
   // 播放歌曲
-  const handlePlay = (song: Song) => {
-    setCurrentSong(song);
-    setIsPlaying(true);
-    toast.success(`正在播放: ${song.name}`);
+  const handlePlay = async (song: Song) => {
+    try {
+      // 显示加载提示
+      toast.loading(`正在加载: ${song.songTitle}`, {
+        id: `play-${song.songId}`,
+      });
+
+      const songsRes = await searchApi.getSongDetail(
+        song.platform,
+        song.songId,
+      );
+      // 创建新的歌曲对象，合并原有属性和新获取的URL/歌词
+      const songWithDetail = {
+        ...song,
+        songUrl: songsRes.data.result.songUrl,
+        songLyric: songsRes.data.result.songLyric,
+      };
+      setCurrentSong(songWithDetail);
+      setIsPlaying(true);
+      toast.success(`正在播放: ${song.songTitle}`, {
+        id: `play-${song.songId}`,
+      });
+    } catch (error) {
+      // 处理错误
+      toast.error(`播放失败: ${song.songTitle}`, { id: `play-${song.songId}` });
+      console.error("获取歌曲详情失败:", error);
+    }
   };
 
   return (
@@ -100,7 +123,9 @@ export default function SearchPage() {
         {history.length > 0 && !searchKeyword && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-muted-foreground">搜索历史</h3>
+              <h3 className="text-sm font-medium text-muted-foreground">
+                搜索历史
+              </h3>
               <Button variant="ghost" size="sm" onClick={clearHistory}>
                 清空
               </Button>
@@ -136,8 +161,12 @@ export default function SearchPage() {
             <TabsList>
               <TabsTrigger value="songs">歌曲 ({songs.length})</TabsTrigger>
               <TabsTrigger value="singers">歌手 ({singers.length})</TabsTrigger>
-              <TabsTrigger value="playlists">歌单 ({playlists.length})</TabsTrigger>
-              <TabsTrigger value="audiobooks">有声书 ({audiobooks.length})</TabsTrigger>
+              <TabsTrigger value="playlists">
+                歌单 ({playlists.length})
+              </TabsTrigger>
+              <TabsTrigger value="audiobooks">
+                有声书 ({audiobooks.length})
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="songs" className="space-y-2">
@@ -148,15 +177,20 @@ export default function SearchPage() {
               ) : (
                 songs.map((song, index) => (
                   <div
-                    key={song.id}
+                    key={song.songId}
                     className="flex items-center gap-4 p-3 rounded-lg hover:bg-accent transition-colors group"
                   >
                     <span className="text-muted-foreground w-6 text-center">
                       {index + 1}
                     </span>
                     <div className="relative h-12 w-12 rounded overflow-hidden bg-muted">
-                      {song.cover ? (
-                        <Image src={song.cover} alt={song.name} fill className="object-cover" />
+                      {song.songImg ? (
+                        <Image
+                          src={song.songImg}
+                          alt={song.songTitle}
+                          fill
+                          className="object-cover"
+                        />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center">
                           <Play className="h-5 w-5 text-muted-foreground" />
@@ -164,16 +198,23 @@ export default function SearchPage() {
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{song.name}</p>
+                      <p className="font-medium truncate">
+                        {song.platform} - {song.songTitle}
+                      </p>
                       <p className="text-sm text-muted-foreground truncate">
-                        {song.singer} · {song.album}
+                        {song.singerName} · {song.albumTitle}
                       </p>
                     </div>
                     <span className="text-sm text-muted-foreground">
                       {formatTime(song.duration)}
                     </span>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handlePlay(song)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handlePlay(song)}
+                      >
                         <Play className="h-4 w-4" />
                       </Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -193,18 +234,30 @@ export default function SearchPage() {
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                   {singers.map((singer) => (
-                    <Card key={singer.id} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
+                    <Card
+                      key={singer.singerId}
+                      className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                    >
                       <div className="relative aspect-square">
                         {singer.avatar ? (
-                          <Image src={singer.avatar} alt={singer.name} fill className="object-cover" />
+                          <Image
+                            src={singer.avatar}
+                            alt={singer.singerName}
+                            fill
+                            className="object-cover"
+                          />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500">
-                            <span className="text-4xl font-bold text-white">{singer.name[0]}</span>
+                            <span className="text-4xl font-bold text-white">
+                              {singer.singerName[0]}
+                            </span>
                           </div>
                         )}
                       </div>
                       <CardContent className="p-3 text-center">
-                        <p className="font-medium truncate">{singer.name}</p>
+                        <p className="font-medium truncate">
+                          {singer.singerName}
+                        </p>
                       </CardContent>
                     </Card>
                   ))}
@@ -220,10 +273,18 @@ export default function SearchPage() {
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                   {playlists.map((playlist) => (
-                    <Card key={playlist.id} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
+                    <Card
+                      key={playlist.id}
+                      className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                    >
                       <div className="relative aspect-square">
                         {playlist.cover ? (
-                          <Image src={playlist.cover} alt={playlist.name} fill className="object-cover" />
+                          <Image
+                            src={playlist.cover}
+                            alt={playlist.name}
+                            fill
+                            className="object-cover"
+                          />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center bg-muted">
                             <Play className="h-10 w-10 text-muted-foreground" />
@@ -232,7 +293,9 @@ export default function SearchPage() {
                       </div>
                       <CardContent className="p-3">
                         <p className="font-medium truncate">{playlist.name}</p>
-                        <p className="text-sm text-muted-foreground">{playlist.songCount}首</p>
+                        <p className="text-sm text-muted-foreground">
+                          {playlist.songCount}首
+                        </p>
                       </CardContent>
                     </Card>
                   ))}
@@ -248,10 +311,18 @@ export default function SearchPage() {
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                   {audiobooks.map((book) => (
-                    <Card key={book.id} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
+                    <Card
+                      key={book.id}
+                      className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                    >
                       <div className="relative aspect-square">
                         {book.cover ? (
-                          <Image src={book.cover} alt={book.name} fill className="object-cover" />
+                          <Image
+                            src={book.cover}
+                            alt={book.name}
+                            fill
+                            className="object-cover"
+                          />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center bg-muted">
                             <Clock className="h-10 w-10 text-muted-foreground" />
@@ -260,7 +331,9 @@ export default function SearchPage() {
                       </div>
                       <CardContent className="p-3">
                         <p className="font-medium truncate">{book.name}</p>
-                        <p className="text-sm text-muted-foreground">{book.episodeCount}集</p>
+                        <p className="text-sm text-muted-foreground">
+                          {book.episodeCount}集
+                        </p>
                       </CardContent>
                     </Card>
                   ))}
@@ -273,9 +346,20 @@ export default function SearchPage() {
         {/* Hot Search */}
         {!searchKeyword && (
           <div className="space-y-3">
-            <h3 className="text-sm font-medium text-muted-foreground">热门搜索</h3>
+            <h3 className="text-sm font-medium text-muted-foreground">
+              热门搜索
+            </h3>
             <div className="flex flex-wrap gap-2">
-              {["周杰伦", "薛之谦", "陈奕迅", "邓紫棋", "林俊杰", "毛不易", "李荣浩", "张学友"].map((word) => (
+              {[
+                "周杰伦",
+                "薛之谦",
+                "陈奕迅",
+                "邓紫棋",
+                "林俊杰",
+                "毛不易",
+                "李荣浩",
+                "张学友",
+              ].map((word) => (
                 <Button
                   key={word}
                   variant="secondary"

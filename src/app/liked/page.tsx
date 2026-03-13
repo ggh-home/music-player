@@ -44,7 +44,7 @@ export default function LikedSongsPage() {
   const handleUnlike = async (songId: string) => {
     try {
       await likeApi.unlikeSong(songId);
-      setLikedSongs(likedSongs.filter((s) => s.id !== songId));
+      setLikedSongs(likedSongs.filter((s) => s.songId !== songId));
       toast.success("已取消喜欢");
     } catch (error) {
       toast.error("操作失败");
@@ -98,7 +98,7 @@ export default function LikedSongsPage() {
           <div className="space-y-2">
             {likedSongs.map((song, index) => (
               <div
-                key={song.id}
+                key={song.songId}
                 className="flex items-center gap-4 p-3 rounded-lg hover:bg-accent transition-colors group"
               >
                 <span className="text-muted-foreground w-6 text-center">
@@ -106,7 +106,12 @@ export default function LikedSongsPage() {
                 </span>
                 <div className="relative h-12 w-12 rounded overflow-hidden bg-muted">
                   {song.cover ? (
-                    <Image src={song.cover} alt={song.name} fill className="object-cover" />
+                    <Image
+                      src={song.cover}
+                      alt={song.songTitle}
+                      fill
+                      className="object-cover"
+                    />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center">
                       <Play className="h-5 w-5 text-muted-foreground" />
@@ -114,19 +119,28 @@ export default function LikedSongsPage() {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{song.name}</p>
-                  <p className="text-sm text-muted-foreground truncate">{song.singer}</p>
+                  <p className="font-medium truncate">{song.songTitle}</p>
+                  <p className="text-sm text-muted-foreground truncate">
+                    {song.singerName}
+                  </p>
                 </div>
-                <span className="text-sm text-muted-foreground">{formatTime(song.duration)}</span>
+                <span className="text-sm text-muted-foreground">
+                  {formatTime(song.duration)}
+                </span>
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handlePlay(song)}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => handlePlay(song)}
+                  >
                     <Play className="h-4 w-4" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 text-red-500"
-                    onClick={() => handleUnlike(song.id)}
+                    onClick={() => handleUnlike(song.songId)}
                   >
                     <Heart className="h-4 w-4 fill-current" />
                   </Button>

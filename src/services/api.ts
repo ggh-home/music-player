@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
-import { ApiResponse, User, LoginRequest, RegisterRequest, Song, Singer, Album, Playlist, Audiobook, AudioEpisode, UserQuota } from "@/types";
+import { ApiResponse, User, LoginRequest, LogoutRequest, RegisterRequest, Song, Singer, Album, Playlist, Audiobook, AudioEpisode, UserQuota } from "@/types";
 
 // 创建 axios 实例
 const apiClient: AxiosInstance = axios.create({
@@ -27,7 +27,7 @@ apiClient.interceptors.request.use(
 // 响应拦截器
 apiClient.interceptors.response.use(
   (response: AxiosResponse<ApiResponse<unknown>>) => {
-    if (response.data.code !== 200) {
+    if (response.data.statusCode.toString() !== "201" && response.data.statusCode.toString() !== "200") {
       throw new Error(response.data.message || "请求失败");
     }
     return response;
@@ -50,7 +50,11 @@ export const userApi = {
 
   // 登录
   login: (data: LoginRequest) =>
-    apiClient.post<ApiResponse<{ existUser: User; token: string }>>("/user/login", data),
+    apiClient.post<ApiResponse<User>>("/user/login", data),
+
+  // 登出
+  logout: (data: LogoutRequest) =>
+    apiClient.post<ApiResponse<{ message: string }>>("/user/logout", data),
 
   // 获取用户信息
   getUserInfo: () =>
@@ -100,8 +104,8 @@ export const searchApi = {
     apiClient.get<ApiResponse<{ playlist: Playlist; songs: Song[] }>>(`/search/playlist/songs/${platform}/${id}`),
 
   // 搜索有声书
-  searchAudiobooks: (keyword: string) =>
-    apiClient.get<ApiResponse<Audiobook[]>>(`/search/audiobook/${encodeURIComponent(keyword)}`),
+  // searchAudiobooks: (keyword: string) =>
+  //   apiClient.get<ApiResponse<Audiobook[]>>(`/search/audiobook/${encodeURIComponent(keyword)}`),
 
   // 获取有声书详情
   getAudiobookDetail: (id: string) =>
@@ -115,12 +119,12 @@ export const searchApi = {
 // 歌单管理 API
 export const playlistApi = {
   // 创建歌单
-  createPlaylist: (data: { name: string; description?: string }) =>
+  createPlaylist: (data: { playListName: string; description?: string }) =>
     apiClient.post<ApiResponse<Playlist>>("/playlist/create", data),
 
   // 获取我的歌单
-  getMyPlaylists: () =>
-    apiClient.get<ApiResponse<Playlist[]>>("/playlist/my"),
+  getMyPlaylists: (playListType: string) =>
+    apiClient.get<ApiResponse<Playlist[]>>(`/playlist/all/${encodeURIComponent(playListType)}`),
 
   // 获取收藏的歌单
   getCollectedPlaylists: () =>
@@ -153,6 +157,9 @@ export const playlistApi = {
   // 导入第三方歌单
   importPlaylist: (platform: 'QQ' | 'Netease', url: string) =>
     apiClient.post<ApiResponse<Playlist>>("/playlist/import", { platform, url }),
+  // 获取歌单歌曲
+  getMyPlaylistsongs: (playListId: string) =>
+    apiClient.get<ApiResponse<Playlist[]>>(`/playlist/songs/${encodeURIComponent(playListId)}`),
 };
 
 // 有声书 API

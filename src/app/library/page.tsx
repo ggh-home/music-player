@@ -17,7 +17,7 @@ import toast from "react-hot-toast";
 export default function LibraryPage() {
   const { isAuthenticated } = useAuthStore();
   const { setCurrentSong, setIsPlaying } = usePlayerStore();
-  
+
   const [likedSongs, setLikedSongs] = useState<Song[]>([]);
   const [myPlaylists, setMyPlaylists] = useState<Playlist[]>([]);
   const [collectedPlaylists, setCollectedPlaylists] = useState<Playlist[]>([]);
@@ -38,11 +38,11 @@ export default function LibraryPage() {
       // 加载喜欢的歌曲
       const likedRes = await likeApi.getLikedSongs();
       setLikedSongs(likedRes.data.data || []);
-      
+
       // 加载我的歌单
       const myPlaylistsRes = await playlistApi.getMyPlaylists();
       setMyPlaylists(myPlaylistsRes.data.data || []);
-      
+
       // 加载收藏的歌单
       const collectedRes = await playlistApi.getCollectedPlaylists();
       setCollectedPlaylists(collectedRes.data.data || []);
@@ -105,7 +105,7 @@ export default function LibraryPage() {
               <div className="space-y-2">
                 {likedSongs.map((song, index) => (
                   <div
-                    key={song.id}
+                    key={song.songId}
                     className="flex items-center gap-4 p-3 rounded-lg hover:bg-accent transition-colors group"
                   >
                     <span className="text-muted-foreground w-6 text-center">
@@ -113,7 +113,12 @@ export default function LibraryPage() {
                     </span>
                     <div className="relative h-12 w-12 rounded overflow-hidden bg-muted">
                       {song.cover ? (
-                        <Image src={song.cover} alt={song.name} fill className="object-cover" />
+                        <Image
+                          src={song.cover}
+                          alt={song.songTitle}
+                          fill
+                          className="object-cover"
+                        />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center">
                           <Play className="h-5 w-5 text-muted-foreground" />
@@ -121,10 +126,14 @@ export default function LibraryPage() {
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{song.name}</p>
-                      <p className="text-sm text-muted-foreground truncate">{song.singer}</p>
+                      <p className="font-medium truncate">{song.songTitle}</p>
+                      <p className="text-sm text-muted-foreground truncate">
+                        {song.singerName}
+                      </p>
                     </div>
-                    <span className="text-sm text-muted-foreground">{formatTime(song.duration)}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {formatTime(song.duration)}
+                    </span>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -157,7 +166,12 @@ export default function LibraryPage() {
                     <Card className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
                       <div className="relative aspect-square">
                         {playlist.cover ? (
-                          <Image src={playlist.cover} alt={playlist.name} fill className="object-cover" />
+                          <Image
+                            src={playlist.cover}
+                            alt={playlist.name}
+                            fill
+                            className="object-cover"
+                          />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500">
                             <Disc className="h-10 w-10 text-white" />
@@ -166,7 +180,9 @@ export default function LibraryPage() {
                       </div>
                       <CardContent className="p-3">
                         <p className="font-medium truncate">{playlist.name}</p>
-                        <p className="text-sm text-muted-foreground">{playlist.songCount}首</p>
+                        <p className="text-sm text-muted-foreground">
+                          {playlist.songCount}首
+                        </p>
                       </CardContent>
                     </Card>
                   </Link>
@@ -187,7 +203,12 @@ export default function LibraryPage() {
                     <Card className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
                       <div className="relative aspect-square">
                         {playlist.cover ? (
-                          <Image src={playlist.cover} alt={playlist.name} fill className="object-cover" />
+                          <Image
+                            src={playlist.cover}
+                            alt={playlist.name}
+                            fill
+                            className="object-cover"
+                          />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center bg-muted">
                             <Disc className="h-10 w-10 text-muted-foreground" />
@@ -196,7 +217,9 @@ export default function LibraryPage() {
                       </div>
                       <CardContent className="p-3">
                         <p className="font-medium truncate">{playlist.name}</p>
-                        <p className="text-sm text-muted-foreground">by {playlist.creator}</p>
+                        <p className="text-sm text-muted-foreground">
+                          by {playlist.creator}
+                        </p>
                       </CardContent>
                     </Card>
                   </Link>
@@ -213,18 +236,30 @@ export default function LibraryPage() {
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                 {followedSingers.map((singer) => (
-                  <Card key={singer.id} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
+                  <Card
+                    key={singer.singerId}
+                    className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                  >
                     <div className="relative aspect-square">
                       {singer.avatar ? (
-                        <Image src={singer.avatar} alt={singer.name} fill className="object-cover" />
+                        <Image
+                          src={singer.avatar}
+                          alt={singer.singerName}
+                          fill
+                          className="object-cover"
+                        />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500">
-                          <span className="text-4xl font-bold text-white">{singer.name[0]}</span>
+                          <span className="text-4xl font-bold text-white">
+                            {singer.singerName[0]}
+                          </span>
                         </div>
                       )}
                     </div>
                     <CardContent className="p-3 text-center">
-                      <p className="font-medium truncate">{singer.name}</p>
+                      <p className="font-medium truncate">
+                        {singer.singerName}
+                      </p>
                     </CardContent>
                   </Card>
                 ))}

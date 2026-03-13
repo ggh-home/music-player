@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
+// import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +20,7 @@ import { Music2, Eye, EyeOff } from "lucide-react";
 import { userApi } from "@/services/api";
 import { useAuthStore } from "@/stores";
 import toast from "react-hot-toast";
+import { ApiResponse, User } from "@/types";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -50,8 +51,8 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       const response = await userApi.login(loginData);
-      const { existUser, token } = response.data.result;
-      login(existUser, token);
+      const user: User = response.data.result;
+      login(user, user.token || "");
       toast.success("登录成功");
       router.push("/");
     } catch (error: any) {

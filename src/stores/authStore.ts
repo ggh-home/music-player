@@ -1,3 +1,11 @@
+/*
+ * @Author: gouguohua gh0410
+ * @Date: 2026-03-05 22:14:38
+ * @LastEditors: gouguohua gh0410
+ * @LastEditTime: 2026-03-07 15:44:50
+ * @FilePath: /music-player/src/stores/authStore.ts
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { User, UserQuota } from "@/types";
@@ -8,12 +16,12 @@ interface AuthState {
   isAuthenticated: boolean;
   quota: UserQuota | null;
   isLoading: boolean;
-  
+
   // Actions
   setUser: (user: User | null) => void;
   setQuota: (quota: UserQuota | null) => void;
   login: (user: User, token: string) => void;
-  logout: () => void;
+  logout: (token: string) => void;
   fetchUserInfo: () => Promise<void>;
   fetchQuota: () => Promise<void>;
 }
@@ -40,7 +48,8 @@ export const useAuthStore = create<AuthState>()(
         set({ user, isAuthenticated: true });
       },
 
-      logout: () => {
+      logout: async (token: string) => {
+        // await userApi.logout({ token });
         localStorage.removeItem("token");
         localStorage.removeItem("user");
         set({ user: null, isAuthenticated: false, quota: null });

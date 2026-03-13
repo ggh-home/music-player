@@ -8,42 +8,42 @@ interface PlayerState {
   currentSong: Song | null;
   currentEpisode: AudioEpisode | null;
   currentType: "song" | "audiobook" | null;
-  
+
   // 播放进度
   currentTime: number;
   duration: number;
   buffered: number;
-  
+
   // 播放器设置
   volume: number;
   isMuted: boolean;
   playMode: PlayMode;
   playbackRate: number;
   quality: AudioQuality;
-  
+
   // 播放队列
   playQueue: PlayQueueItem[];
   currentIndex: number;
-  
+
   // 显示状态
   showPlayer: boolean;
   showLyric: boolean;
   showPlaylist: boolean;
   isFullscreen: boolean;
-  
+
   // 定时关闭
   sleepTimer: number | null;
   sleepTimerEnd: number | null;
-  
+
   // 歌词
   currentLyric: string;
   lyrics: { time: number; text: string }[];
   currentLyricIndex: number;
-  
+
   // 有声书设置
   skipStart: number;
   skipEnd: number;
-  
+
   // Actions
   setIsPlaying: (isPlaying: boolean) => void;
   setCurrentSong: (song: Song | null) => void;
@@ -106,11 +106,11 @@ export const usePlayerStore = create<PlayerState>()(
       skipEnd: 0,
 
       setIsPlaying: (isPlaying) => set({ isPlaying }),
-      
+
       setCurrentSong: (song) => {
         if (song) {
-          set({ 
-            currentSong: song, 
+          set({
+            currentSong: song,
             currentType: "song",
             currentEpisode: null,
             showPlayer: true,
@@ -121,11 +121,11 @@ export const usePlayerStore = create<PlayerState>()(
           set({ currentSong: null, currentType: null });
         }
       },
-      
+
       setCurrentEpisode: (episode) => {
         if (episode) {
-          set({ 
-            currentEpisode: episode, 
+          set({
+            currentEpisode: episode,
             currentType: "audiobook",
             currentSong: null,
             showPlayer: true,
@@ -135,36 +135,36 @@ export const usePlayerStore = create<PlayerState>()(
           set({ currentEpisode: null, currentType: null });
         }
       },
-      
+
       setCurrentTime: (time) => set({ currentTime: time }),
       setDuration: (duration) => set({ duration }),
       setBuffered: (buffered) => set({ buffered }),
-      
+
       setVolume: (volume) => {
         set({ volume, isMuted: volume === 0 });
       },
-      
+
       setMuted: (isMuted) => set({ isMuted }),
-      
+
       setPlayMode: (mode) => set({ playMode: mode }),
-      
+
       togglePlayMode: () => {
         const modes: PlayMode[] = ["list", "random", "single", "order"];
         const currentIndex = modes.indexOf(get().playMode);
         const nextMode = modes[(currentIndex + 1) % modes.length];
         set({ playMode: nextMode });
       },
-      
+
       setPlaybackRate: (rate) => set({ playbackRate: rate }),
       setQuality: (quality) => set({ quality }),
-      
+
       setPlayQueue: (queue) => set({ playQueue: queue, currentIndex: queue.length > 0 ? 0 : -1 }),
-      
+
       addToQueue: (item) => {
         const queue = [...get().playQueue, item];
         set({ playQueue: queue });
       },
-      
+
       removeFromQueue: (index) => {
         const queue = [...get().playQueue];
         queue.splice(index, 1);
@@ -177,32 +177,32 @@ export const usePlayerStore = create<PlayerState>()(
           set({ playQueue: queue });
         }
       },
-      
+
       clearQueue: () => set({ playQueue: [], currentIndex: -1 }),
-      
+
       next: () => {
         const { playQueue, currentIndex, playMode } = get();
         if (playQueue.length === 0) return;
-        
+
         let nextIndex: number;
         if (playMode === "random") {
           nextIndex = Math.floor(Math.random() * playQueue.length);
         } else {
           nextIndex = (currentIndex + 1) % playQueue.length;
         }
-        
+
         const nextItem = playQueue[nextIndex];
         if (nextItem.type === "song") {
-          set({ 
-            currentSong: nextItem.data as Song, 
+          set({
+            currentSong: nextItem.data as Song,
             currentEpisode: null,
             currentType: "song",
             currentIndex: nextIndex,
             currentTime: 0,
           });
         } else {
-          set({ 
-            currentEpisode: nextItem.data as AudioEpisode, 
+          set({
+            currentEpisode: nextItem.data as AudioEpisode,
             currentSong: null,
             currentType: "audiobook",
             currentIndex: nextIndex,
@@ -210,30 +210,30 @@ export const usePlayerStore = create<PlayerState>()(
           });
         }
       },
-      
+
       prev: () => {
         const { playQueue, currentIndex, playMode } = get();
         if (playQueue.length === 0) return;
-        
+
         let prevIndex: number;
         if (playMode === "random") {
           prevIndex = Math.floor(Math.random() * playQueue.length);
         } else {
           prevIndex = currentIndex <= 0 ? playQueue.length - 1 : currentIndex - 1;
         }
-        
+
         const prevItem = playQueue[prevIndex];
         if (prevItem.type === "song") {
-          set({ 
-            currentSong: prevItem.data as Song, 
+          set({
+            currentSong: prevItem.data as Song,
             currentEpisode: null,
             currentType: "song",
             currentIndex: prevIndex,
             currentTime: 0,
           });
         } else {
-          set({ 
-            currentEpisode: prevItem.data as AudioEpisode, 
+          set({
+            currentEpisode: prevItem.data as AudioEpisode,
             currentSong: null,
             currentType: "audiobook",
             currentIndex: prevIndex,
@@ -241,15 +241,15 @@ export const usePlayerStore = create<PlayerState>()(
           });
         }
       },
-      
+
       playAtIndex: (index) => {
         const { playQueue } = get();
         if (index < 0 || index >= playQueue.length) return;
-        
+
         const item = playQueue[index];
         if (item.type === "song") {
-          set({ 
-            currentSong: item.data as Song, 
+          set({
+            currentSong: item.data as Song,
             currentEpisode: null,
             currentType: "song",
             currentIndex: index,
@@ -257,8 +257,8 @@ export const usePlayerStore = create<PlayerState>()(
             isPlaying: true,
           });
         } else {
-          set({ 
-            currentEpisode: item.data as AudioEpisode, 
+          set({
+            currentEpisode: item.data as AudioEpisode,
             currentSong: null,
             currentType: "audiobook",
             currentIndex: index,
@@ -267,14 +267,14 @@ export const usePlayerStore = create<PlayerState>()(
           });
         }
       },
-      
+
       togglePlay: () => set((state) => ({ isPlaying: !state.isPlaying })),
-      
+
       setShowPlayer: (show) => set({ showPlayer: show }),
       setShowLyric: (show) => set({ showLyric: show }),
       setShowPlaylist: (show) => set({ showPlaylist: show }),
       setIsFullscreen: (isFullscreen) => set({ isFullscreen }),
-      
+
       setSleepTimer: (minutes) => {
         if (minutes) {
           const endTime = Date.now() + minutes * 60 * 1000;
@@ -283,10 +283,10 @@ export const usePlayerStore = create<PlayerState>()(
           set({ sleepTimer: null, sleepTimerEnd: null });
         }
       },
-      
+
       setLyrics: (lyrics) => set({ lyrics }),
       setCurrentLyricIndex: (index) => set({ currentLyricIndex: index }),
-      
+
       setSkipStart: (seconds) => set({ skipStart: seconds }),
       setSkipEnd: (seconds) => set({ skipEnd: seconds }),
     }),

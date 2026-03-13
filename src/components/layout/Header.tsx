@@ -45,16 +45,28 @@ export function Header({ className }: HeaderProps) {
     }
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = (token: string) => {
+    logout(token);
     router.push("/login");
+  };
+
+  // 根据时间获取问候语
+  const getGreeting = (name: string) => {
+    const hour = new Date().getHours();
+    if (hour < 12) {
+      return `上午好，${name}`;
+    } else if (hour < 18) {
+      return `下午好，${name}`;
+    } else {
+      return `晚上好，${name}`;
+    }
   };
 
   return (
     <header
       className={cn(
         "flex h-16 items-center justify-between gap-4 border-b bg-card px-6",
-        className
+        className,
       )}
     >
       {/* Search */}
@@ -95,10 +107,15 @@ export function Header({ className }: HeaderProps) {
         {isAuthenticated && user ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+              <Button
+                variant="ghost"
+                className="relative h-10 w-10 rounded-full"
+              >
                 <Avatar className="h-10 w-10">
                   <AvatarImage src={user.avatar} alt={user.userName} />
-                  <AvatarFallback>{user.userName?.[0]?.toUpperCase()}</AvatarFallback>
+                  <AvatarFallback>
+                    {user.userName?.[0]?.toUpperCase()}
+                  </AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
@@ -117,6 +134,11 @@ export function Header({ className }: HeaderProps) {
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
+              <div className="px-2 py-1.5 text-sm font-medium">
+                <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-purple-600">
+                  {getGreeting(user.userName)}
+                </span>
+              </div>
               <DropdownMenuItem asChild>
                 <Link href="/profile">
                   <User className="mr-2 h-4 w-4" />
@@ -130,7 +152,12 @@ export function Header({ className }: HeaderProps) {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} className="text-red-500">
+              <DropdownMenuItem
+                onClick={() =>
+                  handleLogout(localStorage.getItem("token") || "")
+                }
+                className="text-red-500"
+              >
                 <LogOut className="mr-2 h-4 w-4" />
                 退出登录
               </DropdownMenuItem>

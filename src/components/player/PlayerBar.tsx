@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { cn, formatTime } from "@/lib/utils";
+import { cn, formatTime, parseLRC } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -25,12 +25,14 @@ import {
   Heart,
   Download,
   ChevronUp,
+  ChevronDown,
   Clock,
   Mic2,
 } from "lucide-react";
 import { usePlayerStore, useAuthStore } from "@/stores";
 import { likeApi, downloadApi } from "@/services/api";
 import toast from "react-hot-toast";
+import { LyricPanel, LyricLine } from "@/components/player/LyricPanel";
 
 export function PlayerBar() {
   const {
@@ -44,6 +46,7 @@ export function PlayerBar() {
     isMuted,
     playMode,
     showPlayer,
+    showLyric,
     setIsPlaying,
     setCurrentTime,
     setVolume,
@@ -59,15 +62,42 @@ export function PlayerBar() {
   const [isLiked, setIsLiked] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
+  // ====================== 接口歌词自动解析 ======================
+  const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
+
+  // 切换歌曲时自动加载并解析歌词
+  useEffect(() => {
+    // 1. 没有当前歌曲 → 清空歌词
+    if (!currentSong) {
+      setLyricLines([]);
+      return;
+    }
+
+    // 2. 从你接口返回的 songLyric 直接解析
+    if (currentSong.songLyric) {
+      // 直接解析接口返回的 LRC 字符串
+      const parsed = parseLRC(currentSong.songLyric);
+      setLyricLines(parsed);
+    } else {
+      setLyricLines([]);
+    }
+  }, [currentSong]); // 监听歌曲切换
+  // =============================================================
+
   const currentItem = currentType === "song" ? currentSong : currentEpisode;
-  const title = currentType === "song" ? currentSong?.name : currentEpisode?.name;
-  const artist = currentType === "song" ? currentSong?.singer : currentEpisode?.albumName;
+  const title =
+    currentType === "song" ? currentSong?.songTitle : currentEpisode?.name;
+  const artist =
+    currentType === "song"
+      ? currentSong?.singerName
+      : currentEpisode?.albumName;
   const cover = currentType === "song" ? currentSong?.cover : undefined;
 
   // 检查是否已喜欢
   useEffect(() => {
     if (currentSong && isAuthenticated) {
-      likeApi.checkLiked(currentSong.id)
+      likeApi
+        .checkLiked(currentSong.songId)
         .then((res) => setIsLiked(res.data.data))
         .catch(() => setIsLiked(false));
     }
@@ -118,11 +148,11 @@ export function PlayerBar() {
 
     try {
       if (isLiked) {
-        await likeApi.unlikeSong(currentSong.id);
+        await likeApi.unlikeSong(currentSong.songId);
         setIsLiked(false);
         toast.success("已取消喜欢");
       } else {
-        await likeApi.likeSong(currentSong.id, currentSong.platform);
+        await likeApi.likeSong(currentSong.songId, currentSong.platform);
         setIsLiked(true);
         toast.success("已添加到喜欢的歌曲");
       }
@@ -138,8 +168,6 @@ export function PlayerBar() {
       return;
     }
     if (!currentSong) return;
-
-    // 添加到下载队列
     toast.success("已添加到下载队列");
   };
 
@@ -163,11 +191,11 @@ export function PlayerBar() {
   }
 
   return (
-    <div className="border-t bg-card px-4 py-3">
+    <div className="relative border-t bg-card px-4 py-3">
       {/* Hidden Audio Element */}
       <audio
         ref={audioRef}
-        src={currentSong?.url || currentEpisode?.url}
+        src={currentSong?.songUrl || currentEpisode?.url}
         onTimeUpdate={handleTimeUpdate}
         onEnded={() => {
           if (playMode === "single") {
@@ -185,14 +213,26 @@ export function PlayerBar() {
         }}
       />
 
+      {/* 滚动歌词面板 */}
+      <div className="relative h-[1vh] max-h-[400px]">
+        <LyricPanel
+          showLyric={showLyric}
+          setShowLyric={setShowLyric}
+          currentTime={currentTime}
+          lyricLines={lyricLines}
+          songTitle={title}
+          singerName={artist}
+        />
+      </div>
+
       <div className="flex items-center justify-between gap-4">
         {/* Song Info */}
         <div className="flex items-center gap-3 w-1/4 min-w-[200px]">
           <div className="relative h-14 w-14 rounded-lg overflow-hidden bg-muted">
-            {cover ? (
+            {currentSong?.songImg ? (
               <Image
-                src={cover}
-                alt={title || ""}
+                src={currentSong.songImg}
+                alt={currentSong.songTitle || ""}
                 fill
                 className="object-cover"
               />
@@ -215,7 +255,12 @@ export function PlayerBar() {
             >
               <Heart className={cn("h-4 w-4", isLiked && "fill-current")} />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleDownload}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={handleDownload}
+            >
               <Download className="h-4 w-4" />
             </Button>
           </div>
@@ -239,7 +284,12 @@ export function PlayerBar() {
             </DropdownMenu>
 
             {/* Prev */}
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={prev}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={prev}
+            >
               <SkipBack className="h-5 w-5" />
             </Button>
 
@@ -257,7 +307,12 @@ export function PlayerBar() {
             </Button>
 
             {/* Next */}
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={next}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={next}
+            >
               <SkipForward className="h-5 w-5" />
             </Button>
 
@@ -311,13 +366,19 @@ export function PlayerBar() {
             onValueChange={(v) => setVolume(v[0])}
             className="w-20"
           />
+
+          {/* 打开歌词按钮 */}
           <Button
             variant="ghost"
             size="icon"
             className="h-8 w-8"
-            onClick={() => setShowLyric(true)}
+            onClick={() => setShowLyric(!showLyric)}
           >
-            <ChevronUp className="h-4 w-4" />
+            {showLyric ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronUp className="h-4 w-4" />
+            )}
           </Button>
         </div>
       </div>
