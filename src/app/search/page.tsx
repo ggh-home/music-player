@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
-import { Search, Play, Heart, Clock, X, History } from "lucide-react";
+import { Search, Play, Heart, Clock, X, History, Pause } from "lucide-react";
 import { Song, Singer, Playlist, Audiobook } from "@/types";
 import { searchApi } from "@/services/api";
 import { useSearchStore, usePlayerStore } from "@/stores";
@@ -17,19 +17,26 @@ import toast from "react-hot-toast";
 
 export default function SearchPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const initialQuery = searchParams.get("q") || "";
+  const { playSong, currentSong, isPlaying } = usePlayerStore();
 
   const [keyword, setKeyword] = useState(initialQuery);
   const [searchKeyword, setSearchKeyword] = useState(initialQuery);
   const [isLoading, setIsLoading] = useState(false);
-
   const [songs, setSongs] = useState<Song[]>([]);
   const [singers, setSingers] = useState<Singer[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [audiobooks, setAudiobooks] = useState<Audiobook[]>([]);
 
   const { history, addHistory, removeHistory, clearHistory } = useSearchStore();
-  const { setCurrentSong, setIsPlaying, addToQueue } = usePlayerStore();
+
+  // 初始搜索
+  useEffect(() => {
+    if (initialQuery) {
+      handleSearch(initialQuery);
+    }
+  }, [initialQuery]);
 
   // 执行搜索
   const handleSearch = async (searchWord: string = keyword) => {
@@ -40,21 +47,14 @@ export default function SearchPage() {
     addHistory(searchWord, "song");
 
     try {
-      // 搜索歌曲
       const songsRes = await searchApi.searchSongs(searchWord);
       setSongs(songsRes.data.result || []);
 
-      // 搜索歌手
       const singersRes = await searchApi.searchSingers(searchWord);
       setSingers(singersRes.data.result || []);
 
-      // 搜索歌单
       const playlistsRes = await searchApi.searchPlaylists(searchWord);
       setPlaylists(playlistsRes.data.result || []);
-
-      // 搜索有声书
-      // const audiobooksRes = await searchApi.searchAudiobooks(searchWord);
-      // setAudiobooks(audiobooksRes.data.data || []);
     } catch (error) {
       toast.error("搜索失败");
     } finally {
@@ -62,47 +62,23 @@ export default function SearchPage() {
     }
   };
 
-  // 初始搜索
-  useEffect(() => {
-    if (initialQuery) {
-      handleSearch(initialQuery);
-    }
-  }, [initialQuery]);
+  // 播放歌曲：直接调用 store.playSong，让 store 内部获取详情
+  const handlePlaySong = async (song: Song) => {
+    await playSong(song, songs);
+  };
 
-  // 播放歌曲
-  const handlePlay = async (song: Song) => {
-    try {
-      // 显示加载提示
-      toast.loading(`正在加载: ${song.songTitle}`, {
-        id: `play-${song.songId}`,
-      });
+  const goToPlaylist = (name: string) => {
+    router.push(`/play-list?keyword=${encodeURIComponent(name)}`);
+  };
 
-      const songsRes = await searchApi.getSongDetail(
-        song.platform,
-        song.songId,
-      );
-      // 创建新的歌曲对象，合并原有属性和新获取的URL/歌词
-      const songWithDetail = {
-        ...song,
-        songUrl: songsRes.data.result.songUrl,
-        songLyric: songsRes.data.result.songLyric,
-      };
-      setCurrentSong(songWithDetail);
-      setIsPlaying(true);
-      toast.success(`正在播放: ${song.songTitle}`, {
-        id: `play-${song.songId}`,
-      });
-    } catch (error) {
-      // 处理错误
-      toast.error(`播放失败: ${song.songTitle}`, { id: `play-${song.songId}` });
-      console.error("获取歌曲详情失败:", error);
-    }
+  const isSongPlaying = (song: Song) => {
+    return currentSong?.songId === song.songId && isPlaying;
   };
 
   return (
     <MainLayout>
       <div className="space-y-6">
-        {/* Search Header */}
+        {/* 搜索框 */}
         <div className="flex items-center gap-4">
           <div className="relative flex-1 max-w-xl">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -119,7 +95,7 @@ export default function SearchPage() {
           </Button>
         </div>
 
-        {/* Search History */}
+        {/* 搜索历史 */}
         {history.length > 0 && !searchKeyword && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -155,7 +131,7 @@ export default function SearchPage() {
           </div>
         )}
 
-        {/* Search Results */}
+        {/* 搜索结果 */}
         {searchKeyword && (
           <Tabs defaultValue="songs">
             <TabsList>
@@ -169,6 +145,7 @@ export default function SearchPage() {
               </TabsTrigger>
             </TabsList>
 
+            {/* 歌曲结果 */}
             <TabsContent value="songs" className="space-y-2">
               {songs.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
@@ -178,7 +155,8 @@ export default function SearchPage() {
                 songs.map((song, index) => (
                   <div
                     key={song.songId}
-                    className="flex items-center gap-4 p-3 rounded-lg hover:bg-accent transition-colors group"
+                    className="flex items-center gap-4 p-3 rounded-lg hover:bg-accent transition-colors group cursor-pointer"
+                    onClick={() => handlePlaySong(song)}
                   >
                     <span className="text-muted-foreground w-6 text-center">
                       {index + 1}
@@ -205,17 +183,22 @@ export default function SearchPage() {
                         {song.singerName} · {song.albumTitle}
                       </p>
                     </div>
-                    <span className="text-sm text-muted-foreground">
-                      {formatTime(song.duration)}
-                    </span>
+                    {/* 移除时长显示 */}
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
-                        onClick={() => handlePlay(song)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePlaySong(song);
+                        }}
                       >
-                        <Play className="h-4 w-4" />
+                        {isSongPlaying(song) ? (
+                          <Pause className="h-4 w-4" />
+                        ) : (
+                          <Play className="h-4 w-4" />
+                        )}
                       </Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8">
                         <Heart className="h-4 w-4" />
@@ -226,6 +209,7 @@ export default function SearchPage() {
               )}
             </TabsContent>
 
+            {/* 歌手结果 */}
             <TabsContent value="singers" className="space-y-4">
               {singers.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
@@ -265,6 +249,7 @@ export default function SearchPage() {
               )}
             </TabsContent>
 
+            {/* 歌单结果 */}
             <TabsContent value="playlists" className="space-y-4">
               {playlists.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
@@ -276,6 +261,7 @@ export default function SearchPage() {
                     <Card
                       key={playlist.id}
                       className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                      onClick={() => goToPlaylist(playlist.name)}
                     >
                       <div className="relative aspect-square">
                         {playlist.cover ? (
@@ -303,6 +289,7 @@ export default function SearchPage() {
               )}
             </TabsContent>
 
+            {/* 有声书结果 */}
             <TabsContent value="audiobooks" className="space-y-4">
               {audiobooks.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
@@ -343,7 +330,7 @@ export default function SearchPage() {
           </Tabs>
         )}
 
-        {/* Hot Search */}
+        {/* 热门搜索 */}
         {!searchKeyword && (
           <div className="space-y-3">
             <h3 className="text-sm font-medium text-muted-foreground">

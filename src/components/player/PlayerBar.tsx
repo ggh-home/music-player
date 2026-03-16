@@ -26,13 +26,13 @@ import {
   Download,
   ChevronUp,
   ChevronDown,
-  Clock,
   Mic2,
 } from "lucide-react";
 import { usePlayerStore, useAuthStore } from "@/stores";
-import { likeApi, downloadApi } from "@/services/api";
+import { likeApi } from "@/services/api";
 import toast from "react-hot-toast";
-import { LyricPanel, LyricLine } from "@/components/player/LyricPanel";
+import { LyricPanel } from "@/components/player/LyricPanel";
+import type { LyricLine } from "@/components/player/LyricPanel";
 
 export function PlayerBar() {
   const {
@@ -62,27 +62,20 @@ export function PlayerBar() {
   const [isLiked, setIsLiked] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  // ====================== 接口歌词自动解析 ======================
+  // 歌词解析
   const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
-
-  // 切换歌曲时自动加载并解析歌词
   useEffect(() => {
-    // 1. 没有当前歌曲 → 清空歌词
     if (!currentSong) {
       setLyricLines([]);
       return;
     }
-
-    // 2. 从你接口返回的 songLyric 直接解析
     if (currentSong.songLyric) {
-      // 直接解析接口返回的 LRC 字符串
       const parsed = parseLRC(currentSong.songLyric);
       setLyricLines(parsed);
     } else {
       setLyricLines([]);
     }
-  }, [currentSong]); // 监听歌曲切换
-  // =============================================================
+  }, [currentSong]);
 
   const currentItem = currentType === "song" ? currentSong : currentEpisode;
   const title =
@@ -91,30 +84,51 @@ export function PlayerBar() {
     currentType === "song"
       ? currentSong?.singerName
       : currentEpisode?.albumName;
-  const cover = currentType === "song" ? currentSong?.cover : undefined;
 
   // 检查是否已喜欢
-  useEffect(() => {
-    if (currentSong && isAuthenticated) {
-      likeApi
-        .checkLiked(currentSong.songId)
-        .then((res) => setIsLiked(res.data.data))
-        .catch(() => setIsLiked(false));
-    }
-  }, [currentSong, isAuthenticated]);
+  // useEffect(() => {
+  //   if (currentSong && isAuthenticated) {
+  //     likeApi
+  //       .checkLiked(currentSong.songId)
+  //       .then((res) => setIsLiked(res.data.data))
+  //       .catch(() => setIsLiked(false));
+  //   }
+  // }, [currentSong, isAuthenticated]);
 
-  // 播放/暂停
+  // =============== 核心修复 1：监听歌曲切换，自动加载并播放 ===============
   useEffect(() => {
-    if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.play().catch(() => {
+    const audio = audioRef.current;
+    if (!audio || !currentSong?.songUrl) return;
+
+    // 切歌时重置进度
+    audio.currentTime = 0;
+    // 加载新歌曲
+    audio.load();
+
+    // 切歌后如果是播放状态，自动播放
+    if (isPlaying) {
+      audio.play().catch((err) => console.error("自动播放失败", err));
+    }
+  }, [currentSong, isPlaying]);
+
+  // =============== 播放/暂停控制（简化，避免冲突） ===============
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (isPlaying) {
+      // 只有当前歌曲已加载才播放
+      if (audio.src.includes(currentSong?.songUrl)) {
+        audio.play().catch((err) => {
+          console.error("播放失败:", err);
+          toast.error("播放失败，请检查网络或重试");
           setIsPlaying(false);
         });
-      } else {
-        audioRef.current.pause();
       }
+    } else {
+      audio.pause();
     }
-  }, [isPlaying, currentItem]);
+  }, [isPlaying, currentSong, setIsPlaying]);
 
   // 更新音量
   useEffect(() => {
@@ -138,6 +152,33 @@ export function PlayerBar() {
     }
   };
 
+  // 播放结束
+  const handleEnded = () => {
+    if (playMode === "single") {
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play().catch(() => {});
+      }
+    } else {
+      // 自动下一首
+      next();
+    }
+  };
+
+  // 元数据加载完成
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      usePlayerStore.setState({ duration: audioRef.current.duration });
+    }
+  };
+
+  // 音频错误处理
+  const handleError = (e: React.SyntheticEvent<HTMLAudioElement, Event>) => {
+    console.error("音频加载错误:", e.currentTarget.error);
+    toast.error("音频加载失败，请重试");
+    setIsPlaying(false);
+  };
+
   // 喜欢/取消喜欢
   const handleLike = async () => {
     if (!isAuthenticated) {
@@ -156,19 +197,9 @@ export function PlayerBar() {
         setIsLiked(true);
         toast.success("已添加到喜欢的歌曲");
       }
-    } catch (error) {
+    } catch {
       toast.error("操作失败");
     }
-  };
-
-  // 下载
-  const handleDownload = () => {
-    if (!isAuthenticated) {
-      toast.error("请先登录");
-      return;
-    }
-    if (!currentSong) return;
-    toast.success("已添加到下载队列");
   };
 
   // 播放模式图标
@@ -192,28 +223,17 @@ export function PlayerBar() {
 
   return (
     <div className="relative border-t bg-card px-4 py-3">
-      {/* Hidden Audio Element */}
       <audio
         ref={audioRef}
         src={currentSong?.songUrl || currentEpisode?.url}
+        preload="auto"
         onTimeUpdate={handleTimeUpdate}
-        onEnded={() => {
-          if (playMode === "single") {
-            if (audioRef.current) {
-              audioRef.current.currentTime = 0;
-              audioRef.current.play();
-            }
-          } else {
-            next();
-          }
-        }}
-        onLoadedMetadata={(e) => {
-          const target = e.target as HTMLAudioElement;
-          usePlayerStore.setState({ duration: target.duration });
-        }}
+        onEnded={handleEnded}
+        onLoadedMetadata={handleLoadedMetadata}
+        onError={handleError}
       />
 
-      {/* 滚动歌词面板 */}
+      {/* 歌词面板 */}
       <div className="relative h-[1vh] max-h-[400px]">
         <LyricPanel
           showLyric={showLyric}
@@ -225,8 +245,9 @@ export function PlayerBar() {
         />
       </div>
 
+      {/* 底部控制栏 */}
       <div className="flex items-center justify-between gap-4">
-        {/* Song Info */}
+        {/* 歌曲信息 */}
         <div className="flex items-center gap-3 w-1/4 min-w-[200px]">
           <div className="relative h-14 w-14 rounded-lg overflow-hidden bg-muted">
             {currentSong?.songImg ? (
@@ -259,17 +280,16 @@ export function PlayerBar() {
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={handleDownload}
+              onClick={() => toast.success("已添加到下载队列")}
             >
               <Download className="h-4 w-4" />
             </Button>
           </div>
         </div>
 
-        {/* Player Controls */}
+        {/* 播放控制 */}
         <div className="flex flex-col items-center gap-2 flex-1 max-w-xl">
           <div className="flex items-center gap-2">
-            {/* Play Mode */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -277,13 +297,12 @@ export function PlayerBar() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="center">
-                <DropdownMenuItem onClick={() => togglePlayMode()}>
+                <DropdownMenuItem onClick={togglePlayMode}>
                   <span className="text-xs">{playModeText}</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Prev */}
             <Button
               variant="ghost"
               size="icon"
@@ -293,7 +312,6 @@ export function PlayerBar() {
               <SkipBack className="h-5 w-5" />
             </Button>
 
-            {/* Play/Pause */}
             <Button
               size="icon"
               className="h-10 w-10 rounded-full"
@@ -306,7 +324,6 @@ export function PlayerBar() {
               )}
             </Button>
 
-            {/* Next */}
             <Button
               variant="ghost"
               size="icon"
@@ -316,7 +333,6 @@ export function PlayerBar() {
               <SkipForward className="h-5 w-5" />
             </Button>
 
-            {/* Playlist */}
             <Button
               variant="ghost"
               size="icon"
@@ -327,7 +343,6 @@ export function PlayerBar() {
             </Button>
           </div>
 
-          {/* Progress */}
           <div className="flex items-center gap-3 w-full">
             <span className="text-xs text-muted-foreground w-12 text-right">
               {formatTime(currentTime)}
@@ -345,7 +360,6 @@ export function PlayerBar() {
           </div>
         </div>
 
-        {/* Volume & Extra */}
         <div className="flex items-center gap-2 w-1/4 justify-end">
           <Button
             variant="ghost"
@@ -367,7 +381,6 @@ export function PlayerBar() {
             className="w-20"
           />
 
-          {/* 打开歌词按钮 */}
           <Button
             variant="ghost"
             size="icon"

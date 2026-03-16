@@ -1,4 +1,3 @@
-// 首页推荐歌单的播放列表页，展示搜索关键词对应的歌曲列表，并支持点击歌曲播放
 "use client";
 
 import { useState, useEffect } from "react";
@@ -19,19 +18,17 @@ export default function PlayListPage() {
   const keyword = searchParams.get("keyword") || "";
 
   const {
-    setCurrentSong,
+    playSong,
     isPlaying,
     currentSong,
     playMode,
     togglePlayMode,
     setPlayQueue,
-    togglePlay,
   } = usePlayerStore();
 
   const [songs, setSongs] = useState<Song[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 判断当前歌曲是否为正在播放的歌曲
   const isCurrentSongActive = (song: Song) => {
     return currentSong?.songId === song.songId && isPlaying;
   };
@@ -52,19 +49,9 @@ export default function PlayListPage() {
             list.map((s) => ({ id: s.songId, type: "song", data: s })),
           );
 
+          // 自动播放第一首
           const firstSong = list[0];
-          const detail = await searchApi.getSongDetail(
-            firstSong.platform,
-            firstSong.songId,
-          );
-
-          setCurrentSong({
-            ...firstSong,
-            songUrl: detail.data.result.songUrl,
-            songLyric: detail.data.result.songLyric,
-          });
-          togglePlay(); // 自动播放
-          toast.success(`正在播放：${keyword}`, { duration: 1500 });
+          await playSong(firstSong, list);
         }
       } catch (err) {
         toast.error("歌曲列表加载失败");
@@ -75,27 +62,11 @@ export default function PlayListPage() {
     };
 
     loadSongList();
-  }, [keyword, setCurrentSong, setPlayQueue, togglePlay]);
+  }, [keyword, setPlayQueue, playSong]);
 
   // 点击歌曲播放
   const handlePlaySong = async (song: Song) => {
-    try {
-      // 如果是当前播放歌曲，直接切换暂停/播放
-      if (currentSong?.songId === song.songId) {
-        togglePlay();
-        return;
-      }
-      // 新歌曲，加载并播放
-      const detail = await searchApi.getSongDetail(song.platform, song.songId);
-      setCurrentSong({
-        ...song,
-        songUrl: detail.data.result.songUrl,
-        songLyric: detail.data.result.songLyric,
-      });
-      togglePlay();
-    } catch (err) {
-      toast.error("播放失败");
-    }
+    await playSong(song, songs);
   };
 
   return (
@@ -109,7 +80,6 @@ export default function PlayListPage() {
           </h1>
           <p className="text-muted-foreground mt-1">共 {songs.length} 首歌曲</p>
 
-          {/* 循环模式切换 */}
           <Button
             variant="outline"
             size="sm"
@@ -168,13 +138,12 @@ export default function PlayListPage() {
                   </p>
                 </div>
 
-                {/* 🔥 动态切换播放/暂停按钮 */}
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
                   onClick={(e) => {
-                    e.stopPropagation(); // 阻止冒泡，避免触发卡片点击
+                    e.stopPropagation();
                     handlePlaySong(song);
                   }}
                 >

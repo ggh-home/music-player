@@ -1,226 +1,175 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
-import Image from "next/image";
+import { useSearchParams } from "next/navigation";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Play, Heart, MoreHorizontal, Share2, Clock, Plus } from "lucide-react";
-import { Song, Playlist } from "@/types";
-import { playlistApi, searchApi } from "@/services/api";
-import { usePlayerStore, useAuthStore } from "@/stores";
-import { formatTime } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
+import { Play, Pause, Repeat, Repeat1, Music } from "lucide-react";
+import Image from "next/image";
+import { usePlayerStore } from "@/stores/playerStore";
+import { searchApi } from "@/services/api";
 import toast from "react-hot-toast";
+import { Song } from "@/types";
+import { PlayerBar } from "@/components/player/PlayerBar";
+import { formatTime } from "@/lib/utils";
 
-export default function PlaylistDetailPage() {
-  const params = useParams();
-  const id = params.id as string;
-  const { isAuthenticated } = useAuthStore();
-  const { setCurrentSong, setIsPlaying, setPlayQueue, addToQueue } =
-    usePlayerStore();
+export default function PlayListPage() {
+  const searchParams = useSearchParams();
+  const keyword = searchParams.get("keyword") || "";
+  const {
+    playSong,
+    playAll,
+    currentSong,
+    isPlaying,
+    playMode,
+    togglePlayMode,
+  } = usePlayerStore();
 
-  const [playlist, setPlaylist] = useState<Playlist | null>(null);
+  // 页面状态
   const [songs, setSongs] = useState<Song[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isCollected, setIsCollected] = useState(false);
 
+  // 防重复请求：缓存 + 锁 + 重试
+  const [songDetailCache, setSongDetailCache] = useState<Record<string, Song>>(
+    {},
+  );
+  const [requestLock, setRequestLock] = useState<Record<string, boolean>>({});
+  const [retryRecord, setRetryRecord] = useState<Record<string, number>>({});
+  const MAX_RETRY = 2;
+
+  // 加载歌单歌曲
   useEffect(() => {
-    if (id) {
-      loadPlaylistDetail();
-    }
-  }, [id]);
+    if (!keyword) return;
+    loadSongList();
+  }, [keyword]);
 
-  const loadPlaylistDetail = async () => {
+  // 加载歌曲列表
+  const loadSongList = async () => {
     setIsLoading(true);
     try {
-      // 1. 适配新接口：返回 result 直接是歌曲数组
-      const res = await playlistApi.getMyPlaylistsongs(id);
-      const songList = res.data.result || [];
-      setSongs(songList);
+      const res = await searchApi.searchSongs(keyword);
+      setSongs(res.data.result || []);
 
-      // 2. 构造默认歌单基础信息（接口未返回，可替换为真实接口）
-      setPlaylist({
-        id: Number(id),
-        name: "我的歌单",
-        cover: "",
-        description: "自定义歌单",
-        creator: "我",
-        songCount: songList.length,
-        playCount: 0,
-        rawDetail: songList,
-      } as Playlist);
-    } catch (error) {
+      // 自动播放第一首（可选）
+      if (res.data.result?.length) {
+        await handlePlayAll();
+      }
+    } catch (err) {
       toast.error("加载歌单失败");
+      setSongs([]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handlePlayAll = () => {
-    if (songs.length === 0) return;
-    setPlayQueue(
-      songs.map((s) => ({
-        id: s.songId,
-        type: "song" as const,
-        data: s,
-      })),
-    );
-    setCurrentSong(songs[0]);
-    setIsPlaying(true);
-  };
+  // 获取歌曲详情（带缓存/锁/重试）
+  const getSongDetail = async (song: Song) => {
+    const songId = song.songId;
 
-  // 播放歌曲
-  const handlePlay = async (song: Song) => {
+    if (songDetailCache[songId]) return songDetailCache[songId];
+    if (requestLock[songId]) return null;
+    const currentRetry = retryRecord[songId] || 0;
+    if (currentRetry >= MAX_RETRY) {
+      toast.error(`播放失败：${song.songTitle}（已达最大重试次数）`);
+      return null;
+    }
+
+    setRequestLock((prev) => ({ ...prev, [songId]: true }));
+    setRetryRecord((prev) => ({ ...prev, [songId]: currentRetry + 1 }));
+
     try {
-      // 显示加载提示
-      toast.loading(`正在加载: ${song.songTitle}`, {
-        id: `play-${song.songId}`,
-      });
-
-      const songsRes = await searchApi.getSongDetail(
-        song.platform,
-        song.songId,
-      );
-      // 创建新的歌曲对象，合并原有属性和新获取的URL/歌词
-      const songWithDetail = {
+      toast.loading(`加载歌曲：${song.songTitle}`, { id: `load-${songId}` });
+      const res = await searchApi.getSongDetail(song.platform, songId);
+      const fullSong = {
         ...song,
-        songUrl: songsRes.data.result.songUrl,
-        songLyric: songsRes.data.result.songLyric,
+        songUrl: res.data.result.songUrl,
+        songLyric: res.data.result.songLyric,
       };
-      setCurrentSong(songWithDetail);
-      setIsPlaying(true);
-      toast.success(`正在播放: ${song.songTitle}`, {
-        id: `play-${song.songId}`,
-      });
-    } catch (error) {
-      // 处理错误
-      toast.error(`播放失败: ${song.songTitle}`, { id: `play-${song.songId}` });
-      console.error("获取歌曲详情失败:", error);
+      setSongDetailCache((prev) => ({ ...prev, [songId]: fullSong }));
+      toast.success(`加载完成：${song.songTitle}`, { id: `load-${songId}` });
+      return fullSong;
+    } catch (err) {
+      console.error("获取歌曲详情失败:", err);
+      toast.error(
+        `加载失败：${song.songTitle}（重试 ${currentRetry + 1}/${MAX_RETRY}）`,
+        { id: `load-${songId}` },
+      );
+      return null;
+    } finally {
+      setRequestLock((prev) => ({ ...prev, [songId]: false }));
     }
   };
 
-  const handleCollect = async () => {
-    if (!isAuthenticated) {
-      toast.error("请先登录");
-      return;
-    }
-
-    try {
-      if (isCollected) {
-        await playlistApi.uncollectPlaylist(id);
-        setIsCollected(false);
-        toast.success("已取消收藏");
-      } else {
-        await playlistApi.collectPlaylist("local", id);
-        setIsCollected(true);
-        toast.success("已收藏");
-      }
-    } catch (error) {
-      toast.error("操作失败");
-    }
+  // 播放单首歌曲（首次播放自动传完整列表）
+  const handlePlaySong = async (song: Song) => {
+    const fullSong = await getSongDetail(song);
+    if (!fullSong) return;
+    await playSong(fullSong, songs);
   };
 
-  if (isLoading) {
-    return (
-      <MainLayout>
-        <div className="flex items-center justify-center h-[60vh]">
-          <p className="text-muted-foreground">加载中...</p>
-        </div>
-      </MainLayout>
-    );
-  }
+  // 播放全部（自动传完整列表到播放器）
+  const handlePlayAll = async () => {
+    if (!songs.length) return;
+    const fullSong = await getSongDetail(songs[0]);
+    if (!fullSong) return;
+    await playAll(songs);
+  };
 
-  if (!playlist) {
-    return (
-      <MainLayout>
-        <div className="flex items-center justify-center h-[60vh]">
-          <p className="text-muted-foreground">歌单不存在</p>
-        </div>
-      </MainLayout>
-    );
-  }
+  // 判断歌曲是否正在播放
+  const isSongPlaying = (song: Song) => {
+    return currentSong?.songId === song.songId && isPlaying;
+  };
 
   return (
     <MainLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row gap-6 pb-6 border-b">
-          <div className="relative h-48 w-48 rounded-xl overflow-hidden flex-shrink-0 mx-auto md:mx-0">
-            {playlist.cover ? (
-              <Image
-                src={playlist.cover}
-                alt={playlist.name}
-                fill
-                className="object-cover"
-              />
+      <div className="min-h-screen pb-24 px-4 max-w-6xl mx-auto">
+        {/* 头部 */}
+        <div className="py-6 border-b mb-6">
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Music className="h-6 w-6" />
+            {keyword || "播放列表"}
+          </h1>
+          <p className="text-muted-foreground mt-1">共 {songs.length} 首歌曲</p>
+
+          {/* 循环模式切换 */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4 gap-2"
+            onClick={() => togglePlayMode()}
+          >
+            {playMode === "single" ? (
+              <Repeat1 className="h-4 w-4" />
             ) : (
-              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500">
-                <span className="text-6xl font-bold text-white">
-                  {playlist.name?.charAt(0) || "歌"}
-                </span>
-              </div>
+              <Repeat className="h-4 w-4" />
             )}
-          </div>
-          <div className="flex-1 text-center md:text-left">
-            <p className="text-sm text-muted-foreground mb-2">歌单</p>
-            <h1 className="text-3xl font-bold mb-2">{playlist.name}</h1>
-            <p className="text-muted-foreground mb-4">{playlist.description}</p>
-            <div className="flex items-center justify-center md:justify-start gap-4 text-sm text-muted-foreground mb-4">
-              <span>创建者: {playlist.creator}</span>
-              <span>{playlist.songCount}首歌曲</span>
-              <span>{(playlist.playCount! / 10000).toFixed(1)}万播放</span>
-            </div>
-            <div className="flex items-center justify-center md:justify-start gap-2">
-              <Button onClick={handlePlayAll}>
-                <Play className="h-4 w-4 mr-2" />
-                播放全部
-              </Button>
-              <Button variant="outline" onClick={handleCollect}>
-                <Heart
-                  className={cn("h-4 w-4 mr-2", isCollected && "fill-current")}
-                />
-                {isCollected ? "已收藏" : "收藏"}
-              </Button>
-              <Button variant="outline" size="icon">
-                <Share2 className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+            {playMode === "single" ? "单曲循环" : "列表循环"}
+          </Button>
         </div>
 
-        {/* Songs List */}
+        {/* 歌曲列表 */}
         <div className="space-y-2">
-          <div className="flex items-center px-3 py-2 text-sm text-muted-foreground border-b">
-            {/* 序号列：固定宽度+居中 */}
-            <span className="w-8 text-center">序号</span>
-            {/* 标题列：自适应 */}
-            <span className="flex-1 px-2">名称</span>
-            {/* 专辑列：固定宽度+左对齐（核心修改） */}
-            <span className="w-32 text-left hidden md:block">专辑</span>
-            {/* 时长列：固定宽度+居中 */}
-            {/* <span className="w-16 text-center hidden md:block">
-              <Clock className="h-4 w-4 mx-auto" />
-            </span> */}
-            {/* 操作列：预留宽度（与列表项对齐） */}
-            <span className="w-12 hidden md:block"></span>
-          </div>
-          {songs.map((song, index) => (
-            // ✅ 关键修改：添加 onClick 点击整行播放 + cursor-pointer
-            <div
-              key={song.songId}
-              className="flex items-center px-3 py-3 rounded-lg hover:bg-accent transition-colors group cursor-pointer"
-              onClick={() => handlePlay(song)}
-            >
-              {/* 序号列：固定宽度+居中 */}
-              <span className="w-8 text-center text-muted-foreground">
-                {index + 1}
-              </span>
-              {/* 标题列：自适应+最小宽度限制（防止挤压） */}
-              <div className="flex-1 min-w-0 flex items-center gap-2 px-2">
-                {/* 封面 */}
-                <div className="relative h-10 w-10 rounded overflow-hidden bg-muted flex-shrink-0">
+          {isLoading ? (
+            <div className="text-center py-12 text-muted-foreground">
+              加载中...
+            </div>
+          ) : songs.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              暂无歌曲
+            </div>
+          ) : (
+            songs.map((song, idx) => (
+              <Card
+                key={song.songId}
+                className="p-3 flex items-center gap-4 hover:bg-accent cursor-pointer transition-colors"
+                onClick={() => handlePlaySong(song)}
+              >
+                <span className="w-6 text-center text-muted-foreground">
+                  {idx + 1}
+                </span>
+
+                <div className="relative h-12 w-12 rounded overflow-hidden">
                   {song.songImg ? (
                     <Image
                       src={song.songImg}
@@ -229,46 +178,46 @@ export default function PlaylistDetailPage() {
                       className="object-cover"
                     />
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center">
+                    <div className="bg-muted flex items-center justify-center h-full w-full">
                       <Play className="h-4 w-4 text-muted-foreground" />
                     </div>
                   )}
                 </div>
-                {/* 歌名+歌手 */}
-                <div className="min-w-0">
+
+                <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{song.songTitle}</p>
                   <p className="text-sm text-muted-foreground truncate">
-                    {song.singerName}
+                    {song.singerName} · {song.albumTitle}
                   </p>
                 </div>
-              </div>
-              {/* 专辑列：固定宽度+左对齐+文本截断（核心修改） */}
-              <span className="w-32 text-left text-sm text-muted-foreground truncate hidden md:block">
-                {song.albumTitle}
-              </span>
-              {/* 时长列：固定宽度+居中 */}
-              {/* <span className="w-16 text-center text-sm text-muted-foreground hidden md:block">
-                {formatTime(song.duration || 0)}
-              </span> */}
-              {/* 操作列：固定宽度+透明占位（与表头对齐） */}
-              <div className="w-12 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity hidden md:block">
-                {/* ✅ 关键修改：阻止事件冒泡，避免重复触发 */}
+
+                <span className="text-sm text-muted-foreground hidden md:block">
+                  {formatTime(song.duration)}
+                </span>
+
+                {/* 播放/暂停按钮 */}
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handlePlay(song);
+                    handlePlaySong(song);
                   }}
                 >
-                  <Play className="h-4 w-4" />
+                  {isSongPlaying(song) ? (
+                    <Pause className="h-4 w-4" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
                 </Button>
-              </div>
-            </div>
-          ))}
+              </Card>
+            ))
+          )}
         </div>
       </div>
+
+      <PlayerBar />
     </MainLayout>
   );
 }

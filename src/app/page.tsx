@@ -9,13 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Play, Heart, MoreHorizontal, Pause } from "lucide-react";
-import { Song, Playlist, Singer } from "@/types";
+import { Song, Playlist, Singer, PlayQueueItem } from "@/types";
 import { usePlayerStore, useAuthStore } from "@/stores";
 import { searchApi } from "@/services/api";
 import toast from "react-hot-toast";
-import { formatTime } from "@/lib/utils";
 
-// 仅保留 Banner、推荐歌单 Mock，歌曲列表全走接口
+// Mock 数据
 const mockRecommendations = {
   banners: [
     {
@@ -62,7 +61,6 @@ const mockRecommendations = {
   ],
 };
 
-// Tab 与搜索关键词映射
 const TAB_SEARCH_KEY_MAP = {
   new: "最新音乐",
   hot: "热门排行",
@@ -71,21 +69,18 @@ const TAB_SEARCH_KEY_MAP = {
 
 export default function HomePage() {
   const router = useRouter();
-  // 👇 3. 新增解构 currentSong、isPlaying
   const {
-    setCurrentSong,
+    currentSong,
+    isPlaying,
+    playSong,
     setIsPlaying,
     addToQueue,
     setPlayQueue,
-    currentSong,
-    isPlaying,
   } = usePlayerStore();
-  const [activeBanner, setActiveBanner] = useState(0);
 
-  // 歌曲列表 & 加载状态
+  const [activeBanner, setActiveBanner] = useState(0);
   const [songs, setSongs] = useState<Song[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  // 当前激活 Tab
   const [activeTab, setActiveTab] = useState<"new" | "hot" | "recommend">(
     "new",
   );
@@ -100,7 +95,7 @@ export default function HomePage() {
     return () => clearInterval(timer);
   }, []);
 
-  // 统一搜索方法（复用搜索页逻辑）
+  // 统一搜索
   const handleSearch = async (keyword: string) => {
     if (!keyword.trim()) return;
     setIsLoading(true);
@@ -115,57 +110,18 @@ export default function HomePage() {
     }
   };
 
-  // 切换 Tab 时触发对应关键词搜索
   const handleTabChange = (value: "new" | "hot" | "recommend") => {
     setActiveTab(value);
     handleSearch(TAB_SEARCH_KEY_MAP[value]);
   };
 
-  // 首页初始化：自动搜索「最新音乐」
   useEffect(() => {
     handleSearch(TAB_SEARCH_KEY_MAP.new);
   }, []);
 
-  // 完整播放逻辑（完全对齐搜索页，获取歌曲详情、URL、歌词）
-  const handlePlay = async (song: Song) => {
-    try {
-      toast.loading(`正在加载: ${song.songTitle}`, {
-        id: `play-${song.songId}`,
-      });
-
-      const songsRes = await searchApi.getSongDetail(
-        song.platform,
-        song.songId,
-      );
-      const songWithDetail = {
-        ...song,
-        songUrl: songsRes.data.result.songUrl,
-        songLyric: songsRes.data.result.songLyric,
-      };
-
-      setCurrentSong(songWithDetail);
-      setIsPlaying(true);
-      toast.success(`正在播放: ${song.songTitle}`, {
-        id: `play-${song.songId}`,
-      });
-    } catch (error) {
-      toast.error(`播放失败: ${song.songTitle}`, { id: `play-${song.songId}` });
-      console.error("获取歌曲详情失败:", error);
-    }
-  };
-
-  // 👇 4. 新增：切换播放/暂停状态
+  // 播放/暂停切换
   const togglePlayPause = async (song: Song) => {
-    // 如果是当前播放歌曲 → 切换暂停/播放
-    if (currentSong?.songId === song.songId) {
-      setIsPlaying(!isPlaying);
-      toast.success(isPlaying ? "已暂停" : "继续播放", {
-        id: `play-${song.songId}`,
-      });
-      return;
-    }
-    // 不是当前歌曲 → 执行正常播放逻辑
-    await handlePlay(song);
+    await playSong(song, songs);
   };
 
   // 添加到播放队列
@@ -174,12 +130,11 @@ export default function HomePage() {
     toast.success(`已添加到播放队列: ${song.songTitle}`);
   };
 
-  // 🔥 轮播图/歌单点击：跳转播放页并携带关键词
+  // 跳转播放页
   const goToPlayPage = (keyword: string) => {
     router.push(`/play-list?keyword=${encodeURIComponent(keyword)}`);
   };
 
-  // 👇 5. 判断当前歌曲是否正在播放
   const isSongPlaying = (song: Song) => {
     return currentSong?.songId === song.songId && isPlaying;
   };
@@ -221,7 +176,6 @@ export default function HomePage() {
               </div>
             </div>
           ))}
-          {/* 轮播指示器 */}
           <div className="absolute bottom-4 right-4 flex gap-2">
             {mockRecommendations.banners.map((_, index) => (
               <button
@@ -337,7 +291,6 @@ export default function HomePage() {
                         </p>
                       </div>
 
-                      {/* 👇 6. 核心优化：按钮永久显示 + 播放/暂停切换 */}
                       <div className="flex gap-1 opacity-100">
                         <Button
                           variant="ghost"
@@ -348,7 +301,6 @@ export default function HomePage() {
                             togglePlayPause(song);
                           }}
                         >
-                          {/* 根据状态切换图标 */}
                           {isSongPlaying(song) ? (
                             <Pause className="h-4 w-4" />
                           ) : (
