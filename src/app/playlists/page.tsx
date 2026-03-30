@@ -18,7 +18,7 @@ export default function PlaylistDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const { isAuthenticated } = useAuthStore();
-  const { playSong, playAll, currentSong, isPlaying } = usePlayerStore();
+  const { playSong, currentSong, isPlaying } = usePlayerStore();
 
   // 页面状态
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
@@ -45,7 +45,7 @@ export default function PlaylistDetailPage() {
   const loadPlaylistDetail = async () => {
     setIsLoading(true);
     try {
-      const res = await playlistApi.getMyPlaylistsongs(id);
+      const res = await playlistApi.getMyPlaylists(id);
       const songList = res.data.result || [];
       setSongs(songList);
 
@@ -69,6 +69,7 @@ export default function PlaylistDetailPage() {
   const getSongDetail = async (song: Song) => {
     const songId = song.songId;
 
+    if (song.songUrl && song.songLyric !== undefined) return song;
     if (songDetailCache[songId]) return songDetailCache[songId];
     if (requestLock[songId]) return null;
     const currentRetry = retryRecord[songId] || 0;
@@ -115,7 +116,7 @@ export default function PlaylistDetailPage() {
     if (!songs.length) return;
     const fullSong = await getSongDetail(songs[0]);
     if (!fullSong) return;
-    await playAll(songs);
+    await playSong(fullSong, songs);
   };
 
   // 收藏/取消收藏歌单

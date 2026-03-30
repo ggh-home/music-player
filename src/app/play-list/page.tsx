@@ -159,7 +159,7 @@ export default function PlayListPage() {
         </div>
       </div>
 
-      <PlayerBar />
+      {/* <PlayerBar /> */}
     </MainLayout>
   );
 }

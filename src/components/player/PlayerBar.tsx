@@ -18,7 +18,6 @@ import {
   SkipForward,
   Volume2,
   VolumeX,
-  Repeat,
   Repeat1,
   Shuffle,
   ListMusic,
@@ -45,22 +44,30 @@ export function PlayerBar() {
     volume,
     isMuted,
     playMode,
+    playbackRate,
     showPlayer,
     showLyric,
     setIsPlaying,
+    setCurrentSong,
     setCurrentTime,
+    setDuration,
     setVolume,
     setMuted,
     togglePlayMode,
     next,
     prev,
+    fetchSongDetail,
     setShowPlaylist,
     setShowLyric,
   } = usePlayerStore();
 
   const { isAuthenticated } = useAuthStore();
   const [isLiked, setIsLiked] = useState(false);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [seekValue, setSeekValue] = useState(0);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const pendingSeekRef = useRef(0);
+  const latestTimeRef = useRef(0);
 
   // 歌词解析
   const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
@@ -84,6 +91,9 @@ export function PlayerBar() {
     currentType === "song"
       ? currentSong?.singerName
       : currentEpisode?.albumName;
+  const currentSourceUrl =
+    currentType === "song" ? currentSong?.songUrl : currentEpisode?.url;
+  const coverImage = currentType === "song" ? currentSong?.songImg : undefined;
 
   // 检查是否已喜欢
   // useEffect(() => {
@@ -95,40 +105,64 @@ export function PlayerBar() {
   //   }
   // }, [currentSong, isAuthenticated]);
 
-  // =============== 核心修复 1：监听歌曲切换，自动加载并播放 ===============
+  // 兼容直接 setCurrentSong 的场景：缺少 songUrl 时按需补详情
+  useEffect(() => {
+    if (currentType !== "song" || !currentSong || currentSong.songUrl) return;
+
+    let cancelled = false;
+
+    const loadSongDetail = async () => {
+      const fullSong = await fetchSongDetail(currentSong);
+      if (!cancelled && fullSong) {
+        setCurrentSong(fullSong);
+      }
+    };
+
+    void loadSongDetail();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSong, currentType, fetchSongDetail, setCurrentSong]);
+
+  // 音源变化时只负责重载资源，不再干预播放状态
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !currentSong?.songUrl) return;
+    if (!audio) return;
 
-    // 切歌时重置进度
-    audio.currentTime = 0;
-    // 加载新歌曲
-    audio.load();
-
-    // 切歌后如果是播放状态，自动播放
-    if (isPlaying) {
-      audio.play().catch((err) => console.error("自动播放失败", err));
+    if (!currentSourceUrl) {
+      audio.pause();
+      pendingSeekRef.current = 0;
+      setDuration(0);
+      setCurrentTime(0);
+      setSeekValue(0);
+      setIsSeeking(false);
+      return;
     }
-  }, [currentSong, isPlaying]);
 
-  // =============== 播放/暂停控制（简化，避免冲突） ===============
+    pendingSeekRef.current = latestTimeRef.current;
+    setDuration(0);
+    setSeekValue(latestTimeRef.current);
+    audio.load();
+  }, [currentSourceUrl, setCurrentTime, setDuration]);
+
+  // 播放/暂停控制单独处理，避免切换时重置进度
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
     if (isPlaying) {
-      // 只有当前歌曲已加载才播放
-      if (audio.src.includes(currentSong?.songUrl)) {
-        audio.play().catch((err) => {
-          console.error("播放失败:", err);
-          toast.error("播放失败，请检查网络或重试");
-          setIsPlaying(false);
-        });
-      }
+      if (!currentSourceUrl) return;
+      audio.play().catch((err) => {
+        if (err.name === "AbortError") return;
+        console.error("播放失败:", err);
+        toast.error("播放失败，请检查网络或重试");
+        setIsPlaying(false);
+      });
     } else {
       audio.pause();
     }
-  }, [isPlaying, currentSong, setIsPlaying]);
+  }, [isPlaying, currentSourceUrl, setIsPlaying]);
 
   // 更新音量
   useEffect(() => {
@@ -137,19 +171,46 @@ export function PlayerBar() {
     }
   }, [volume, isMuted]);
 
+  // 播放速度同步到 audio 元素
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackRate;
+    }
+  }, [playbackRate]);
+
+  useEffect(() => {
+    if (!isSeeking) {
+      setSeekValue(currentTime);
+    }
+  }, [currentTime, isSeeking]);
+
+  useEffect(() => {
+    latestTimeRef.current = currentTime;
+  }, [currentTime]);
+
   // 时间更新
   const handleTimeUpdate = () => {
-    if (audioRef.current) {
-      setCurrentTime(audioRef.current.currentTime);
+    if (audioRef.current && !isSeeking) {
+      const nextTime = audioRef.current.currentTime;
+      setCurrentTime(nextTime);
+      setSeekValue(nextTime);
     }
   };
 
-  // 进度跳转
-  const handleSeek = (value: number[]) => {
+  // 拖动进度时先更新 UI，释放后再真正 seek
+  const handleSeekChange = (value: number[]) => {
+    setIsSeeking(true);
+    setSeekValue(value[0] ?? 0);
+  };
+
+  const handleSeekCommit = (value: number[]) => {
+    const nextTime = value[0] ?? 0;
+    setIsSeeking(false);
+    setSeekValue(nextTime);
     if (audioRef.current) {
-      audioRef.current.currentTime = value[0];
-      setCurrentTime(value[0]);
+      audioRef.current.currentTime = nextTime;
     }
+    setCurrentTime(nextTime);
   };
 
   // 播放结束
@@ -157,10 +218,10 @@ export function PlayerBar() {
     if (playMode === "single") {
       if (audioRef.current) {
         audioRef.current.currentTime = 0;
+        setCurrentTime(0);
         audioRef.current.play().catch(() => {});
       }
     } else {
-      // 自动下一首
       next();
     }
   };
@@ -168,7 +229,21 @@ export function PlayerBar() {
   // 元数据加载完成
   const handleLoadedMetadata = () => {
     if (audioRef.current) {
-      usePlayerStore.setState({ duration: audioRef.current.duration });
+      const nextDuration = Number.isFinite(audioRef.current.duration)
+        ? audioRef.current.duration
+        : 0;
+
+      setDuration(nextDuration);
+      audioRef.current.playbackRate = playbackRate;
+
+      if (pendingSeekRef.current > 0) {
+        const nextTime = Math.min(pendingSeekRef.current, nextDuration || pendingSeekRef.current);
+        audioRef.current.currentTime = nextTime;
+        setCurrentTime(nextTime);
+        setSeekValue(nextTime);
+      }
+
+      pendingSeekRef.current = 0;
     }
   };
 
@@ -225,7 +300,7 @@ export function PlayerBar() {
     <div className="relative border-t bg-card px-4 py-3">
       <audio
         ref={audioRef}
-        src={currentSong?.songUrl || currentEpisode?.url}
+        src={currentSourceUrl}
         preload="auto"
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleEnded}
@@ -250,10 +325,10 @@ export function PlayerBar() {
         {/* 歌曲信息 */}
         <div className="flex items-center gap-3 w-1/4 min-w-[200px]">
           <div className="relative h-14 w-14 rounded-lg overflow-hidden bg-muted">
-            {currentSong?.songImg ? (
+            {coverImage ? (
               <Image
-                src={currentSong.songImg}
-                alt={currentSong.songTitle || ""}
+                src={coverImage}
+                alt={title || ""}
                 fill
                 className="object-cover"
               />
@@ -348,10 +423,11 @@ export function PlayerBar() {
               {formatTime(currentTime)}
             </span>
             <Slider
-              value={[currentTime]}
+              value={[isSeeking ? seekValue : currentTime]}
               max={duration || 100}
               step={1}
-              onValueChange={handleSeek}
+              onValueChange={handleSeekChange}
+              onValueCommit={handleSeekCommit}
               className="flex-1"
             />
             <span className="text-xs text-muted-foreground w-12">

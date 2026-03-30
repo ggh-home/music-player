@@ -67,6 +67,14 @@ const TAB_SEARCH_KEY_MAP = {
   recommend: "个性推荐",
 };
 
+// 定义有效的 tab 类型
+type ValidTab = "new" | "hot" | "recommend";
+
+// 校验是否为有效的 tab 类型
+const isValidTab = (value: string): value is ValidTab => {
+  return ["new", "hot", "recommend"].includes(value);
+};
+
 export default function HomePage() {
   const router = useRouter();
   const {
@@ -110,9 +118,16 @@ export default function HomePage() {
     }
   };
 
-  const handleTabChange = (value: "new" | "hot" | "recommend") => {
-    setActiveTab(value);
-    handleSearch(TAB_SEARCH_KEY_MAP[value]);
+  const handleTabChange = (value: string) => {
+    // 校验 value 是否为有效类型
+    if (isValidTab(value)) {
+      setActiveTab(value);
+      handleSearch(TAB_SEARCH_KEY_MAP[value]);
+    } else {
+      // 处理无效值，默认切换到 new
+      setActiveTab("new");
+      handleSearch(TAB_SEARCH_KEY_MAP.new);
+    }
   };
 
   useEffect(() => {

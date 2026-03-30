@@ -19,7 +19,6 @@ export default function PlayListPage() {
   const keyword = searchParams.get("keyword") || "";
   const {
     playSong,
-    playAll,
     currentSong,
     isPlaying,
     playMode,
@@ -67,6 +66,7 @@ export default function PlayListPage() {
   const getSongDetail = async (song: Song) => {
     const songId = song.songId;
 
+    if (song.songUrl && song.songLyric !== undefined) return song;
     if (songDetailCache[songId]) return songDetailCache[songId];
     if (requestLock[songId]) return null;
     const currentRetry = retryRecord[songId] || 0;
@@ -113,7 +113,7 @@ export default function PlayListPage() {
     if (!songs.length) return;
     const fullSong = await getSongDetail(songs[0]);
     if (!fullSong) return;
-    await playAll(songs);
+    await playSong(fullSong, songs);
   };
 
   // 判断歌曲是否正在播放

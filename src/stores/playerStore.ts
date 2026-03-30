@@ -4,6 +4,23 @@ import { Song, AudioEpisode, PlayMode, AudioQuality, PlayQueueItem } from "@/typ
 import { searchApi } from "@/services/api";
 import toast from "react-hot-toast";
 
+const hasSongDetail = (song: Song | null | undefined) =>
+  Boolean(song?.songUrl) && song?.songLyric !== undefined;
+
+const isSameSong = (a: Song | null | undefined, b: Song | null | undefined) =>
+  Boolean(a && b && a.songId === b.songId && a.platform === b.platform);
+
+const mergeSongDetail = (song: Song, fallback?: Song | null): Song => {
+  if (!fallback) return song;
+
+  return {
+    ...fallback,
+    ...song,
+    songUrl: song.songUrl || fallback.songUrl,
+    songLyric: song.songLyric ?? fallback.songLyric,
+  };
+};
+
 interface PlayerState {
   isPlaying: boolean;
   currentSong: Song | null;
@@ -111,30 +128,64 @@ export const usePlayerStore = create<PlayerState>()(
 
       setCurrentSong: (song) => {
         if (song) {
-          set({
-            currentSong: song,
+          const { currentSong, currentIndex, playQueue, songDetailCache } = get();
+          const nextSong = mergeSongDetail(
+            song,
+            isSameSong(song, currentSong) ? currentSong : songDetailCache[song.songId]
+          );
+          const queueIndex = playQueue.findIndex(
+            (item) => item.type === "song" && item.id === nextSong.songId
+          );
+          const nextIndex =
+            queueIndex >= 0 ? queueIndex : isSameSong(nextSong, currentSong) ? currentIndex : -1;
+
+          set((state) => ({
+            currentSong: nextSong,
             currentType: "song",
             currentEpisode: null,
             showPlayer: true,
-            currentTime: 0,
-            duration: song.duration || 0,
-          });
+            currentTime: isSameSong(nextSong, state.currentSong) ? state.currentTime : 0,
+            duration: isSameSong(nextSong, state.currentSong)
+              ? state.duration || nextSong.duration || 0
+              : nextSong.duration || 0,
+            currentIndex: nextIndex,
+            songDetailCache: hasSongDetail(nextSong)
+              ? { ...state.songDetailCache, [nextSong.songId]: nextSong }
+              : state.songDetailCache,
+          }));
         } else {
-          set({ currentSong: null, currentType: null });
+          set({
+            currentSong: null,
+            currentType: null,
+            currentTime: 0,
+            duration: 0,
+            currentIndex: -1,
+          });
         }
       },
 
       setCurrentEpisode: (episode) => {
         if (episode) {
+          const queueIndex = get().playQueue.findIndex(
+            (item) => item.type === "audiobook" && item.id === episode.id
+          );
           set({
             currentEpisode: episode,
             currentType: "audiobook",
             currentSong: null,
             showPlayer: true,
             currentTime: episode.playProgress || 0,
+            duration: episode.duration || 0,
+            currentIndex: queueIndex,
           });
         } else {
-          set({ currentEpisode: null, currentType: null });
+          set({
+            currentEpisode: null,
+            currentType: null,
+            currentTime: 0,
+            duration: 0,
+            currentIndex: -1,
+          });
         }
       },
 
@@ -160,7 +211,13 @@ export const usePlayerStore = create<PlayerState>()(
       setPlaybackRate: (rate) => set({ playbackRate: rate }),
       setQuality: (quality) => set({ quality }),
 
-      setPlayQueue: (queue) => set({ playQueue: queue, currentIndex: queue.length > 0 ? 0 : -1 }),
+      setPlayQueue: (queue) => {
+        const { currentType, currentSong, currentEpisode } = get();
+        const currentId =
+          currentType === "song" ? currentSong?.songId : currentEpisode?.id;
+        const nextIndex = currentId ? queue.findIndex((item) => item.id === currentId) : -1;
+        set({ playQueue: queue, currentIndex: nextIndex });
+      },
 
       addToQueue: (item) => {
         const queue = [...get().playQueue, item];
@@ -168,19 +225,80 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       removeFromQueue: (index) => {
-        const queue = [...get().playQueue];
+        const { playQueue, currentIndex } = get();
+        const queue = [...playQueue];
+        if (index < 0 || index >= queue.length) return;
         queue.splice(index, 1);
-        const newIndex = get().currentIndex;
-        if (index < newIndex) {
-          set({ playQueue: queue, currentIndex: newIndex - 1 });
-        } else if (index === newIndex) {
-          set({ playQueue: queue, currentIndex: -1, isPlaying: false });
-        } else {
-          set({ playQueue: queue });
+        if (queue.length === 0) {
+          set({
+            playQueue: [],
+            currentIndex: -1,
+            isPlaying: false,
+            currentSong: null,
+            currentEpisode: null,
+            currentType: null,
+            showPlayer: false,
+            currentTime: 0,
+            duration: 0,
+          });
+          return;
         }
+
+        if (index < currentIndex) {
+          set({ playQueue: queue, currentIndex: currentIndex - 1 });
+          return;
+        }
+
+        if (index > currentIndex) {
+          set({ playQueue: queue });
+          return;
+        }
+
+        const fallbackIndex = Math.min(index, queue.length - 1);
+        const fallbackItem = queue[fallbackIndex];
+
+        if (fallbackItem.type === "song") {
+          const fallbackSong = fallbackItem.data as Song;
+          set({
+            playQueue: queue,
+            currentIndex: fallbackIndex,
+            currentSong: fallbackSong,
+            currentEpisode: null,
+            currentType: "song",
+            currentTime: 0,
+            duration: fallbackSong.duration || 0,
+            isPlaying: false,
+            showPlayer: true,
+          });
+          return;
+        }
+
+        const fallbackEpisode = fallbackItem.data as AudioEpisode;
+        set({
+          playQueue: queue,
+          currentIndex: fallbackIndex,
+          currentSong: null,
+          currentEpisode: fallbackEpisode,
+          currentType: "audiobook",
+          currentTime: fallbackEpisode.playProgress || 0,
+          duration: fallbackEpisode.duration || 0,
+          isPlaying: false,
+          showPlayer: true,
+        });
       },
 
-      clearQueue: () => set({ playQueue: [], currentIndex: -1 }),
+      clearQueue: () =>
+        set({
+          playQueue: [],
+          currentIndex: -1,
+          isPlaying: false,
+          currentSong: null,
+          currentEpisode: null,
+          currentType: null,
+          showPlayer: false,
+          currentTime: 0,
+          duration: 0,
+        }),
 
       next: () => {
         const { playQueue, currentIndex, playMode, playItemAtIndex } = get();
@@ -188,13 +306,28 @@ export const usePlayerStore = create<PlayerState>()(
 
         let nextIndex: number;
         if (playMode === "random") {
-          nextIndex = Math.floor(Math.random() * playQueue.length);
+          if (playQueue.length === 1) {
+            nextIndex = 0;
+          } else {
+            do {
+              nextIndex = Math.floor(Math.random() * playQueue.length);
+            } while (nextIndex === currentIndex);
+          }
+        } else if (playMode === "order") {
+          if (currentIndex < 0) {
+            void playItemAtIndex(0);
+            return;
+          }
+          if (currentIndex >= playQueue.length - 1) {
+            set({ isPlaying: false });
+            return;
+          }
+          nextIndex = currentIndex + 1;
         } else {
-          nextIndex = (currentIndex + 1) % playQueue.length;
+          nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % playQueue.length;
         }
 
-        // 🔧 直接调用切歌方法，自动播放
-        playItemAtIndex(nextIndex);
+        void playItemAtIndex(nextIndex);
       },
 
       prev: () => {
@@ -203,17 +336,24 @@ export const usePlayerStore = create<PlayerState>()(
 
         let prevIndex: number;
         if (playMode === "random") {
-          prevIndex = Math.floor(Math.random() * playQueue.length);
+          if (playQueue.length === 1) {
+            prevIndex = 0;
+          } else {
+            do {
+              prevIndex = Math.floor(Math.random() * playQueue.length);
+            } while (prevIndex === currentIndex);
+          }
+        } else if (playMode === "order") {
+          prevIndex = currentIndex <= 0 ? 0 : currentIndex - 1;
         } else {
           prevIndex = currentIndex <= 0 ? playQueue.length - 1 : currentIndex - 1;
         }
 
-        // 🔧 直接调用切歌方法，自动播放
-        playItemAtIndex(prevIndex);
+        void playItemAtIndex(prevIndex);
       },
 
       playAtIndex: (index) => {
-        get().playItemAtIndex(index);
+        void get().playItemAtIndex(index);
       },
 
       togglePlay: () => set((state) => ({ isPlaying: !state.isPlaying })),
@@ -240,12 +380,19 @@ export const usePlayerStore = create<PlayerState>()(
 
       // ========== 新增核心方法 ==========
       fetchSongDetail: async (song) => {
-        const { songDetailCache, requestLock, retryRecord } = get();
+        const { currentSong, songDetailCache, requestLock, retryRecord } = get();
         const songId = song.songId;
         const MAX_RETRY = 2;
+        const hydratedSong = mergeSongDetail(
+          song,
+          isSameSong(song, currentSong) ? currentSong : songDetailCache[songId]
+        );
 
-        if (songDetailCache[songId]) {
-          return songDetailCache[songId];
+        if (hasSongDetail(hydratedSong)) {
+          set((state) => ({
+            songDetailCache: { ...state.songDetailCache, [songId]: hydratedSong },
+          }));
+          return hydratedSong;
         }
         if (requestLock[songId]) {
           return null;
@@ -264,11 +411,14 @@ export const usePlayerStore = create<PlayerState>()(
         try {
           toast.loading(`正在加载: ${song.songTitle}`, { id: `fetch-${songId}` });
           const res = await searchApi.getSongDetail(song.platform, songId);
-          const fullSong: Song = {
-            ...song,
-            songUrl: res.data.result.songUrl,
-            songLyric: res.data.result.songLyric,
-          };
+          const fullSong = mergeSongDetail(
+            {
+              ...song,
+              songUrl: res.data.result.songUrl,
+              songLyric: res.data.result.songLyric,
+            },
+            hydratedSong
+          );
           set((state) => ({
             songDetailCache: { ...state.songDetailCache, [songId]: fullSong },
           }));
@@ -288,94 +438,124 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       playItemAtIndex: async (index) => {
-        const { playQueue, currentSong, isPlaying, fetchSongDetail } = get();
+        const {
+          playQueue,
+          currentSong,
+          currentEpisode,
+          isPlaying,
+          fetchSongDetail,
+          songDetailCache,
+        } = get();
         if (index < 0 || index >= playQueue.length) return;
 
         const item = playQueue[index];
-        if (item.type !== "song") return; // 有声书暂不处理
 
-        let song = item.data as Song;
+        if (item.type === "audiobook") {
+          const episode = item.data as AudioEpisode;
+          const isSameEpisode = currentEpisode?.id === episode.id;
 
-        // 🔧 优化1：如果歌曲没有 songUrl，先强制加载详情
-        if (!song.songUrl) {
+          if (isSameEpisode) {
+            set({ isPlaying: !isPlaying, showPlayer: true });
+            return;
+          }
+
+          set({
+            currentEpisode: episode,
+            currentType: "audiobook",
+            currentSong: null,
+            currentIndex: index,
+            currentTime: episode.playProgress || 0,
+            duration: episode.duration || 0,
+            isPlaying: true,
+            showPlayer: true,
+          });
+          return;
+        }
+
+        let song = mergeSongDetail(
+          item.data as Song,
+          isSameSong(item.data as Song, currentSong)
+            ? currentSong
+            : songDetailCache[item.id]
+        );
+
+        if (!hasSongDetail(song)) {
           const fullSong = await fetchSongDetail(song);
-          if (!fullSong) return; // 加载失败则不播放
+          if (!fullSong) return;
           song = fullSong;
-          // 更新队列中的歌曲信息（同步缓存）
           const newQueue = [...playQueue];
           newQueue[index] = { ...newQueue[index], data: fullSong };
           set({ playQueue: newQueue });
         }
 
-        // 🔧 优化2：判断是否为「同一首歌（且 URL 相同）」
-        const isSameSong = currentSong?.songId === song.songId && currentSong?.songUrl === song.songUrl;
-
-        if (isSameSong) {
-          // 同一首歌：切换暂停/播放（保留原有逻辑）
-          set({ isPlaying: !isPlaying, showPlayer: true });
+        if (isSameSong(currentSong, song)) {
+          set((state) => ({
+            currentSong: song,
+            currentIndex: index,
+            isPlaying: !state.isPlaying,
+            showPlayer: true,
+            songDetailCache: hasSongDetail(song)
+              ? { ...state.songDetailCache, [song.songId]: song }
+              : state.songDetailCache,
+          }));
         } else {
-          // 新歌曲：强制设置为播放状态（核心修复！）
-          set({
+          set((state) => ({
             currentSong: song,
             currentType: "song",
             currentEpisode: null,
             currentIndex: index,
-            currentTime: 0, // 重置播放进度
+            currentTime: 0,
             duration: song.duration || 0,
-            isPlaying: true, // 🔧 强制自动播放，无需手动点
-            showPlayer: true, // 确保显示播放器
-          });
+            isPlaying: true,
+            showPlayer: true,
+            songDetailCache: hasSongDetail(song)
+              ? { ...state.songDetailCache, [song.songId]: song }
+              : state.songDetailCache,
+          }));
         }
       },
 
       playSong: async (song, fullPlaylist) => {
-        const { setPlayQueue, playItemAtIndex } = get();
+        const { setPlayQueue, playItemAtIndex, currentSong, songDetailCache } = get();
+        const targetSong = mergeSongDetail(
+          song,
+          isSameSong(song, currentSong) ? currentSong : songDetailCache[song.songId]
+        );
+        const nextSongCache = hasSongDetail(targetSong)
+          ? { ...songDetailCache, [targetSong.songId]: targetSong }
+          : songDetailCache;
 
         try {
           toast.loading("正在加载播放列表...", { id: "load-playlist" });
 
-          // 批量加载所有歌曲的 songUrl 和 songLyric
-          const filledPlaylist = await Promise.all(
-            fullPlaylist.map(async (item) => {
-              // 跳过已缓存的歌曲（提升性能）
-              const cachedSong = get().songDetailCache[item.songId];
-              if (cachedSong) {
-                return cachedSong;
-              }
-              try {
-                const res = await searchApi.getSongDetail(item.platform, item.songId);
-                const detail = res.data?.result;
-                return {
-                  ...item,
-                  songUrl: detail?.songUrl ?? "",
-                  songLyric: detail?.songLyric ?? "",
-                };
-              } catch (err) {
-                console.warn(`歌曲 ${item.songTitle} 加载失败`, err);
-                return item;
-              }
-            })
-          );
+          const newPlayQueue: PlayQueueItem[] = fullPlaylist.map((item) => {
+            const queueSong = mergeSongDetail(
+              item,
+              isSameSong(item, targetSong) ? targetSong : nextSongCache[item.songId]
+            );
 
-          // 构建播放队列
-          const newPlayQueue: PlayQueueItem[] = filledPlaylist.map((s) => ({
-            id: s.songId,
-            type: "song",
-            data: s,
-          }));
+            return {
+              id: queueSong.songId,
+              type: "song",
+              data: queueSong,
+            };
+          });
 
-          const targetIndex = newPlayQueue.findIndex((item) => item.id === song.songId);
+          const targetIndex = newPlayQueue.findIndex((item) => item.id === targetSong.songId);
           if (targetIndex === -1) {
             toast.error("歌曲不在播放列表中", { id: "load-playlist" });
             return;
           }
 
-          // 先设置队列，再触发播放（核心：顺序不能反）
-          setPlayQueue(newPlayQueue);
-          toast.success("播放列表加载完成", { id: "load-playlist" });
+          if (hasSongDetail(targetSong)) {
+            set((state) => ({
+              songDetailCache: { ...state.songDetailCache, [targetSong.songId]: targetSong },
+            }));
+          }
 
-          // 🔧 强制触发自动播放，无需手动操作
+          setPlayQueue(newPlayQueue);
           await playItemAtIndex(targetIndex);
+          toast.success("开始播放", { id: "load-playlist" });
         } catch (error) {
           console.error("播放列表加载失败", error);
           toast.error("加载播放信息失败", { id: "load-playlist" });

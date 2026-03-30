@@ -136,11 +136,11 @@ export const playlistApi = {
 
   // 删除歌单
   deletePlaylist: (id: string) =>
-    apiClient.delete<ApiResponse<void>>(`/playlist/${id}`),
+    apiClient.delete<ApiResponse<void>>(`/playlist/delete/${id}`),
 
   // 添加歌曲到歌单
   addSongToPlaylist: (playlistId: string, song: Song) =>
-    apiClient.post<ApiResponse<void>>(`/playlist/${playlistId}/songs`, song),
+    apiClient.post<ApiResponse<void>>(`/playlist/add-song`, song),
 
   // 从歌单移除歌曲
   removeSongFromPlaylist: (playlistId: string, songId: string) =>
@@ -148,11 +148,11 @@ export const playlistApi = {
 
   // 收藏歌单
   collectPlaylist: (platform: string, id: string) =>
-    apiClient.post<ApiResponse<void>>(`/playlist/collect`, { platform, id }),
+    apiClient.post<ApiResponse<void>>(`/playlist/bookmark`, { platform, id }),
 
   // 取消收藏歌单
   uncollectPlaylist: (id: string) =>
-    apiClient.delete<ApiResponse<void>>(`/playlist/collect/${id}`),
+    apiClient.delete<ApiResponse<void>>(`/playlist/un-bookmark/${id}`),
 
   // 导入第三方歌单
   importPlaylist: (platform: 'QQ' | 'Netease', url: string) =>
