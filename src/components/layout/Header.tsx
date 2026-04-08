@@ -34,7 +34,7 @@ interface HeaderProps {
 
 export function Header({ className }: HeaderProps) {
   const router = useRouter();
-  const { user, isAuthenticated, logout } = useAuthStore();
+  const { user, isAuthenticated, logout, authPrompt } = useAuthStore();
   const { theme, setTheme } = useTheme();
   const [searchKeyword, setSearchKeyword] = useState("");
 
@@ -165,7 +165,9 @@ export function Header({ className }: HeaderProps) {
           </DropdownMenu>
         ) : (
           <Button asChild>
-            <Link href="/login">登录</Link>
+            <Link href="/login">
+              {authPrompt === "expired" ? "重新登录" : "登录"}
+            </Link>
           </Button>
         )}
       </div>

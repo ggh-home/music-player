@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import Image from "next/image";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
@@ -19,7 +18,6 @@ import {
 } from "lucide-react";
 import { DownloadTask } from "@/types";
 import { useDownloadStore, useAuthStore } from "@/stores";
-import { downloadApi } from "@/services/api";
 import { formatFileSize } from "@/lib/utils";
 import toast from "react-hot-toast";
 import Link from "next/link";
@@ -31,32 +29,13 @@ export default function DownloadsPage() {
     completed,
     dailyLimit,
     usedCount,
+    downloadRootHint,
     pauseDownload,
     resumeDownload,
     retryDownload,
     removeDownload,
     clearQueue,
-    setDailyLimit,
   } = useDownloadStore();
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      loadDownloadData();
-    }
-  }, [isAuthenticated]);
-
-  const loadDownloadData = async () => {
-    try {
-      // 获取下载队列
-      const queueRes = await downloadApi.getDownloadQueue();
-      // 获取已下载列表
-      const completedRes = await downloadApi.getDownloaded();
-      // 获取限额信息
-      // setDailyLimit(...)
-    } catch (error) {
-      console.error("加载下载数据失败", error);
-    }
-  };
 
   const handleClearQueue = () => {
     if (confirm("确定要清空下载队列吗？")) {
@@ -127,6 +106,9 @@ export default function DownloadsPage() {
             )}
           </div>
         </div>
+        <p className="text-sm text-muted-foreground">
+          默认下载目录：{downloadRootHint}
+        </p>
 
         <Tabs defaultValue="queue">
           <TabsList>
@@ -177,6 +159,11 @@ export default function DownloadsPage() {
                             )}
                           </div>
                           <Progress value={task.progress} className="mt-2" />
+                          {task.savePath && (
+                            <p className="mt-2 text-xs text-muted-foreground truncate">
+                              {task.savePath}
+                            </p>
+                          )}
                         </div>
                         <div className="flex items-center gap-1">
                           {task.status === "downloading" ? (
@@ -258,6 +245,11 @@ export default function DownloadsPage() {
                               </span>
                             )}
                           </div>
+                          {task.savePath && (
+                            <p className="mt-2 text-xs text-muted-foreground truncate">
+                              {task.savePath}
+                            </p>
+                          )}
                         </div>
                         <Button variant="ghost" size="icon" className="h-8 w-8">
                           <Play className="h-4 w-4" />

@@ -7,16 +7,17 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
-import { Play, Heart, Clock, Disc, Mic2, Plus } from "lucide-react";
+import { Play, Heart, Clock, Disc, Mic2, Plus, Download } from "lucide-react";
 import { Song, Playlist, Singer } from "@/types";
 import { likeApi, playlistApi } from "@/services/api";
-import { usePlayerStore, useAuthStore } from "@/stores";
+import { usePlayerStore, useAuthStore, useDownloadStore } from "@/stores";
 import { formatTime } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 export default function LibraryPage() {
   const { isAuthenticated } = useAuthStore();
-  const { setCurrentSong, setIsPlaying } = usePlayerStore();
+  const { playSong } = usePlayerStore();
+  const { downloadSong } = useDownloadStore();
 
   const [likedSongs, setLikedSongs] = useState<Song[]>([]);
   const [myPlaylists, setMyPlaylists] = useState<Playlist[]>([]);
@@ -36,16 +37,16 @@ export default function LibraryPage() {
     setIsLoading(true);
     try {
       // 加载喜欢的歌曲
-      const likedRes = await likeApi.getLikedSongs();
-      setLikedSongs(likedRes.data.data || []);
+      const likedSongs = await likeApi.getLikedSongs();
+      setLikedSongs(likedSongs);
 
       // 加载我的歌单
-      const myPlaylistsRes = await playlistApi.getMyPlaylists();
-      setMyPlaylists(myPlaylistsRes.data.data || []);
+      const myPlaylists = await playlistApi.getMyPlaylists("CUSTOM");
+      setMyPlaylists(myPlaylists);
 
       // 加载收藏的歌单
-      const collectedRes = await playlistApi.getCollectedPlaylists();
-      setCollectedPlaylists(collectedRes.data.data || []);
+      const collectedPlaylists = await playlistApi.getCollectedPlaylists();
+      setCollectedPlaylists(collectedPlaylists);
     } catch (error) {
       toast.error("加载数据失败");
     } finally {
@@ -54,8 +55,15 @@ export default function LibraryPage() {
   };
 
   const handlePlay = (song: Song) => {
-    setCurrentSong(song);
-    setIsPlaying(true);
+    void playSong(song, likedSongs);
+  };
+
+  const handleDownloadSong = async (song: Song) => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+    await downloadSong(song);
   };
 
   if (!isAuthenticated) {
@@ -115,7 +123,7 @@ export default function LibraryPage() {
                       {song.cover ? (
                         <Image
                           src={song.cover}
-                          alt={song.songTitle}
+                          alt={song.songTitle || "song"}
                           fill
                           className="object-cover"
                         />
@@ -132,8 +140,16 @@ export default function LibraryPage() {
                       </p>
                     </div>
                     <span className="text-sm text-muted-foreground">
-                      {formatTime(song.duration)}
+                      {formatTime(song.duration || 0)}
                     </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => void handleDownloadSong(song)}
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -168,7 +184,7 @@ export default function LibraryPage() {
                         {playlist.cover ? (
                           <Image
                             src={playlist.cover}
-                            alt={playlist.name}
+                            alt={playlist.name || "playlist"}
                             fill
                             className="object-cover"
                           />
@@ -205,7 +221,7 @@ export default function LibraryPage() {
                         {playlist.cover ? (
                           <Image
                             src={playlist.cover}
-                            alt={playlist.name}
+                            alt={playlist.name || "playlist"}
                             fill
                             className="object-cover"
                           />

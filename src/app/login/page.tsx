@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 // import Image from "next/image";
@@ -20,11 +20,11 @@ import { Music2, Eye, EyeOff } from "lucide-react";
 import { userApi } from "@/services/api";
 import { useAuthStore } from "@/stores";
 import toast from "react-hot-toast";
-import { ApiResponse, User } from "@/types";
+import { User } from "@/types";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useAuthStore();
+  const { login, authPrompt, clearAuthPrompt } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -41,6 +41,12 @@ export default function LoginPage() {
     confirmPassword: "",
   });
 
+  useEffect(() => {
+    return () => {
+      clearAuthPrompt();
+    };
+  }, [clearAuthPrompt]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginData.userName || !loginData.password) {
@@ -50,13 +56,12 @@ export default function LoginPage() {
 
     setIsLoading(true);
     try {
-      const response = await userApi.login(loginData);
-      const user: User = response.data.result;
+      const user: User = await userApi.login(loginData);
       login(user, user.token || "");
       toast.success("登录成功");
       router.push("/");
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "登录失败");
+      toast.error(error?.message || "登录失败");
     } finally {
       setIsLoading(false);
     }
@@ -80,7 +85,7 @@ export default function LoginPage() {
       // Switch to login tab
       setLoginData({ userName: registerData.userName, password: "" });
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "注册失败");
+      toast.error(error?.message || "注册失败");
     } finally {
       setIsLoading(false);
     }
@@ -89,6 +94,14 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-900 via-slate-900 to-black p-4">
       <div className="w-full max-w-md">
+        {authPrompt !== "none" && (
+          <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            {authPrompt === "expired"
+              ? "登录状态已过期，请重新登录。"
+              : "请先登录后再继续。"}
+          </div>
+        )}
+
         {/* Logo */}
         <div className="flex justify-center mb-8">
           <div className="flex items-center gap-3">

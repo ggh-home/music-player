@@ -1,143 +1,96 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
-import { Play, Heart, Share2, Disc, UserPlus, Check } from "lucide-react";
+import { Play, Heart, Share2, Disc, UserPlus, Check, Download } from "lucide-react";
 import { Song, Album, Singer } from "@/types";
 import { searchApi } from "@/services/api";
-import { usePlayerStore, useAuthStore } from "@/stores";
-import { formatTime, formatNumber } from "@/lib/utils";
+import { usePlayerStore, useAuthStore, useDownloadStore } from "@/stores";
+import { cn, formatTime } from "@/lib/utils";
+import {
+  addSongToHeartPlaylist,
+  getSongFavoriteKey,
+  loadLikedSongMapBySongList,
+  removeSongFromHeartPlaylist,
+} from "@/lib/heartPlaylist";
 import toast from "react-hot-toast";
 
 export default function ArtistDetailPage() {
-  const params = useParams();
+  const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const id = params.id as string;
+  const platform = searchParams.get("platform") || "QQ";
+
   const { isAuthenticated } = useAuthStore();
-  const { setCurrentSong, setIsPlaying } = usePlayerStore();
+  const { playSong } = usePlayerStore();
+  const { downloadSong } = useDownloadStore();
 
   const [artist, setArtist] = useState<Singer | null>(null);
   const [songs, setSongs] = useState<Song[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isFollowing, setIsFollowing] = useState(false);
+  const [likedSongMap, setLikedSongMap] = useState<Record<string, boolean>>({});
+  const [heartPlaylistId, setHeartPlaylistId] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
-      loadArtistDetail();
+      void loadArtistDetail();
     }
-  }, [id]);
+  }, [id, platform]);
+
+  useEffect(() => {
+    if (!songs.length) {
+      setLikedSongMap({});
+      if (!isAuthenticated) setHeartPlaylistId(null);
+      return;
+    }
+    void syncLikedStateForSongs(songs);
+  }, [isAuthenticated]);
 
   const loadArtistDetail = async () => {
     setIsLoading(true);
     try {
-      // 加载歌手详情
-      // const artistRes = await searchApi.getSingerDetail(id);
-      // setArtist(artistRes.data.data);
+      const [songList, albumList] = await Promise.all([
+        searchApi.getSingerSongs(platform, id),
+        searchApi.getSingerAlbums(platform, id),
+      ]);
 
-      // 加载歌手歌曲
-      // const songsRes = await searchApi.getSingerSongs("QQ", id);
-      // setSongs(songsRes.data.data);
+      setSongs(songList);
+      await syncLikedStateForSongs(songList);
+      setAlbums(albumList);
 
-      // 加载歌手专辑
-      // const albumsRes = await searchApi.getSingerAlbums("QQ", id);
-      // setAlbums(albumsRes.data.data);
+      const singerName =
+        songList[0]?.singerName || albumList[0]?.singerName || "未知歌手";
+      const singerImg = songList[0]?.songImg || albumList[0]?.albumImg || "";
 
-      // 模拟数据
       setArtist({
-        id,
-        name: "周杰伦",
-        platform: "QQ",
-        songCount: 200,
-        albumCount: 15,
+        platform,
+        singerId: id,
+        singerName,
+        countOfSong: songList.length,
+        countOfAlbum: albumList.length,
+        singerImg,
       });
-
-      setSongs([
-        {
-          id: "1",
-          name: "夜曲",
-          singer: "周杰伦",
-          duration: 226,
-          platform: "QQ",
-        },
-        {
-          id: "2",
-          name: "晴天",
-          singer: "周杰伦",
-          duration: 269,
-          platform: "QQ",
-        },
-        {
-          id: "3",
-          name: "七里香",
-          singer: "周杰伦",
-          duration: 299,
-          platform: "QQ",
-        },
-        {
-          id: "4",
-          name: "稻香",
-          singer: "周杰伦",
-          duration: 223,
-          platform: "QQ",
-        },
-        {
-          id: "5",
-          name: "青花瓷",
-          singer: "周杰伦",
-          duration: 239,
-          platform: "QQ",
-        },
-      ]);
-
-      setAlbums([
-        {
-          id: "1",
-          name: "十一月的萧邦",
-          singer: "周杰伦",
-          singerId: id,
-          platform: "QQ",
-          songCount: 12,
-        },
-        {
-          id: "2",
-          name: "叶惠美",
-          singer: "周杰伦",
-          singerId: id,
-          platform: "QQ",
-          songCount: 11,
-        },
-        {
-          id: "3",
-          name: "七里香",
-          singer: "周杰伦",
-          singerId: id,
-          platform: "QQ",
-          songCount: 10,
-        },
-        {
-          id: "4",
-          name: "范特西",
-          singer: "周杰伦",
-          singerId: id,
-          platform: "QQ",
-          songCount: 10,
-        },
-      ]);
     } catch (error) {
       toast.error("加载歌手信息失败");
+      setArtist(null);
+      setSongs([]);
+      setAlbums([]);
+      setLikedSongMap({});
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handlePlay = (song: Song) => {
-    setCurrentSong(song);
-    setIsPlaying(true);
+  const handlePlay = async (song: Song) => {
+    if (!songs.length) return;
+    await playSong(song, songs);
   };
 
   const handleFollow = () => {
@@ -147,6 +100,76 @@ export default function ArtistDetailPage() {
     }
     setIsFollowing(!isFollowing);
     toast.success(isFollowing ? "已取消关注" : "关注成功");
+  };
+
+  const isSongLiked = (song: Song) => {
+    return likedSongMap[getSongFavoriteKey(song)] === true;
+  };
+
+  const syncLikedStateForSongs = async (songList: Song[]) => {
+    if (!songList.length) {
+      setLikedSongMap({});
+      return;
+    }
+
+    if (!isAuthenticated) {
+      setHeartPlaylistId(null);
+      setLikedSongMap(
+        songList.reduce<Record<string, boolean>>((acc, song) => {
+          acc[getSongFavoriteKey(song)] = false;
+          return acc;
+        }, {}),
+      );
+      return;
+    }
+
+    try {
+      const { heartPlaylistId: nextPlaylistId, likedSongMap: nextLikedMap } =
+        await loadLikedSongMapBySongList(songList);
+      setHeartPlaylistId(nextPlaylistId);
+      setLikedSongMap(nextLikedMap);
+    } catch {
+      setLikedSongMap(
+        songList.reduce<Record<string, boolean>>((acc, song) => {
+          acc[getSongFavoriteKey(song)] = false;
+          return acc;
+        }, {}),
+      );
+    }
+  };
+
+  const handleToggleSongFavorite = async (song: Song) => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+
+    const songKey = getSongFavoriteKey(song);
+    const liked = isSongLiked(song);
+
+    try {
+      if (liked) {
+        const playlistId = await removeSongFromHeartPlaylist(song, heartPlaylistId);
+        if (playlistId) setHeartPlaylistId(playlistId);
+        setLikedSongMap((prev) => ({ ...prev, [songKey]: false }));
+        toast.success("已取消收藏");
+      } else {
+        const playlistId = await addSongToHeartPlaylist(song, heartPlaylistId);
+        setHeartPlaylistId(playlistId);
+        setLikedSongMap((prev) => ({ ...prev, [songKey]: true }));
+        toast.success("已收藏到我的红心歌单");
+      }
+    } catch {
+      toast.error("操作失败");
+    }
+  };
+
+  const handleDownloadSong = async (song: Song) => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+    await downloadSong(song);
   };
 
   if (isLoading) {
@@ -175,9 +198,9 @@ export default function ArtistDetailPage() {
         {/* Header */}
         <div className="flex flex-col md:flex-row gap-6 pb-6 border-b">
           <div className="relative h-40 w-40 rounded-full overflow-hidden flex-shrink-0 mx-auto md:mx-0">
-            {artist.avatar ? (
+            {artist.singerImg ? (
               <Image
-                src={artist.avatar}
+                src={artist.singerImg}
                 alt={artist.singerName}
                 fill
                 className="object-cover"
@@ -193,11 +216,11 @@ export default function ArtistDetailPage() {
           <div className="flex-1 text-center md:text-left">
             <h1 className="text-3xl font-bold mb-2">{artist.singerName}</h1>
             <div className="flex items-center justify-center md:justify-start gap-4 text-sm text-muted-foreground mb-4">
-              <span>{artist.songCount}首歌曲</span>
-              <span>{artist.albumCount}张专辑</span>
+              <span>{songs.length}首歌曲</span>
+              <span>{albums.length}张专辑</span>
             </div>
             <div className="flex items-center justify-center md:justify-start gap-2">
-              <Button onClick={() => handlePlay(songs[0])}>
+              <Button onClick={() => songs[0] && void handlePlay(songs[0])} disabled={songs.length === 0}>
                 <Play className="h-4 w-4 mr-2" />
                 播放热门
               </Button>
@@ -232,17 +255,17 @@ export default function ArtistDetailPage() {
           <TabsContent value="songs" className="space-y-2">
             {songs.map((song, index) => (
               <div
-                key={song.songId}
+                key={`${song.platform}-${song.songId}`}
                 className="flex items-center gap-4 p-3 rounded-lg hover:bg-accent transition-colors group"
               >
                 <span className="text-muted-foreground w-8 text-center">
                   {index + 1}
                 </span>
                 <div className="relative h-10 w-10 rounded overflow-hidden bg-muted flex-shrink-0">
-                  {song.cover ? (
+                  {song.songImg ? (
                     <Image
-                      src={song.cover}
-                      alt={song.songTitle}
+                      src={song.songImg}
+                      alt={song.songTitle || "song"}
                       fill
                       className="object-cover"
                     />
@@ -259,19 +282,32 @@ export default function ArtistDetailPage() {
                   </p>
                 </div>
                 <span className="text-sm text-muted-foreground">
-                  {formatTime(song.duration)}
+                  {formatTime(song.duration || 0)}
                 </span>
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8"
-                    onClick={() => handlePlay(song)}
+                    onClick={() => void handleDownloadSong(song)}
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => void handlePlay(song)}
                   >
                     <Play className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <Heart className="h-4 w-4" />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn("h-8 w-8", isSongLiked(song) && "text-red-500")}
+                    onClick={() => void handleToggleSongFavorite(song)}
+                  >
+                    <Heart className={cn("h-4 w-4", isSongLiked(song) && "fill-current")} />
                   </Button>
                 </div>
               </div>
@@ -282,14 +318,14 @@ export default function ArtistDetailPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {albums.map((album) => (
                 <Card
-                  key={album.id}
+                  key={`${album.platform}-${album.albumId}`}
                   className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
                 >
                   <div className="relative aspect-square">
-                    {album.cover ? (
+                    {album.albumImg ? (
                       <Image
-                        src={album.cover}
-                        alt={album.name}
+                        src={album.albumImg}
+                        alt={album.albumTitle}
                         fill
                         className="object-cover"
                       />
@@ -300,9 +336,9 @@ export default function ArtistDetailPage() {
                     )}
                   </div>
                   <CardContent className="p-3">
-                    <p className="font-medium truncate">{album.name}</p>
+                    <p className="font-medium truncate">{album.albumTitle}</p>
                     <p className="text-sm text-muted-foreground">
-                      {album.songCount}首
+                      {album.releaseDate || "未知发行时间"}
                     </p>
                   </CardContent>
                 </Card>

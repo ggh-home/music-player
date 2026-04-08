@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { MainLayout } from "@/components/layout/MainLayout";
@@ -9,8 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Play, Heart, Clock, BookOpen, Download, Check } from "lucide-react";
-import { Audiobook, AudioEpisode } from "@/types";
-import { audiobookApi, searchApi } from "@/services/api";
+import { AudioEpisode, SoundAlbum } from "@/types";
+import { audiobookApi, searchApi, soundalbumApi } from "@/services/api";
 import { usePlayerStore, useAuthStore } from "@/stores";
 import { formatDuration } from "@/lib/utils";
 import toast from "react-hot-toast";
@@ -19,31 +19,47 @@ export default function AudiobooksPage() {
   const { isAuthenticated } = useAuthStore();
   const { setCurrentEpisode, setIsPlaying } = usePlayerStore();
 
-  const [collectedBooks, setCollectedBooks] = useState<Audiobook[]>([]);
+  const [collectedBooks, setCollectedBooks] = useState<SoundAlbum[]>([]);
   const [cachedEpisodes, setCachedEpisodes] = useState<AudioEpisode[]>([]);
-  const [recommendedBooks, setRecommendedBooks] = useState<Audiobook[]>([]);
+  const [recommendedBooks, setRecommendedBooks] = useState<SoundAlbum[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadAudiobookData();
-  }, []);
+    void loadAudiobookData();
+  }, [isAuthenticated]);
+
+  const getBookKey = (book: Pick<SoundAlbum, "platform" | "albumId">) => {
+    return `${book.platform}::${book.albumId}`;
+  };
+
+  const collectedKeySet = useMemo(
+    () => new Set(collectedBooks.map((item) => getBookKey(item))),
+    [collectedBooks],
+  );
+
+  const isBookCollected = (book: SoundAlbum) => {
+    return collectedKeySet.has(getBookKey(book));
+  };
 
   const loadAudiobookData = async () => {
     setIsLoading(true);
     try {
       if (isAuthenticated) {
         // 加载收藏的有声书
-        const collectedRes = await audiobookApi.getCollectedAudiobooks();
-        setCollectedBooks(collectedRes.data.data || []);
+        const collectedRes = await soundalbumApi.getCollectedSoundAlbums();
+        setCollectedBooks(collectedRes);
 
         // 加载缓存的音频
         const cachedRes = await audiobookApi.getCachedAudios();
-        setCachedEpisodes(cachedRes.data.data || []);
+        setCachedEpisodes(cachedRes);
+      } else {
+        setCollectedBooks([]);
+        setCachedEpisodes([]);
       }
 
       // 加载推荐有声书
-      // const recommendedRes = await searchApi.searchAudiobooks("热门");
-      // setRecommendedBooks(recommendedRes.data.data?.slice(0, 6) || []);
+      const recommendedRes = await searchApi.searchSoundAlbums("热门");
+      setRecommendedBooks(recommendedRes.slice(0, 6));
     } catch (error) {
       console.error("加载有声书数据失败", error);
     } finally {
@@ -57,7 +73,7 @@ export default function AudiobooksPage() {
     toast.success(`正在播放: ${episode.name}`);
   };
 
-  const handleCollect = async (bookId: string, isCollected: boolean) => {
+  const handleCollect = async (book: SoundAlbum, isCollected: boolean) => {
     if (!isAuthenticated) {
       toast.error("请先登录");
       return;
@@ -65,10 +81,10 @@ export default function AudiobooksPage() {
 
     try {
       if (isCollected) {
-        await audiobookApi.uncollectAudiobook(bookId);
+        await soundalbumApi.unBookmarkSoundAlbum(book);
         toast.success("已取消收藏");
       } else {
-        await audiobookApi.collectAudiobook(bookId);
+        await soundalbumApi.bookmarkSoundAlbum(book);
         toast.success("已收藏");
       }
       loadAudiobookData();
@@ -114,14 +130,14 @@ export default function AudiobooksPage() {
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                 {collectedBooks.map((book) => (
                   <Card
-                    key={book.id}
+                    key={`${book.platform}-${book.albumId}`}
                     className="overflow-hidden hover:shadow-lg transition-shadow"
                   >
                     <div className="relative aspect-square">
-                      {book.cover ? (
+                      {book.albumImg ? (
                         <Image
-                          src={book.cover}
-                          alt={book.name}
+                          src={book.albumImg}
+                          alt={book.albumTitle}
                           fill
                           className="object-cover"
                         />
@@ -134,19 +150,19 @@ export default function AudiobooksPage() {
                         variant="ghost"
                         size="icon"
                         className="absolute top-2 right-2 h-8 w-8 bg-black/50 hover:bg-black/70 text-white"
-                        onClick={() => handleCollect(book.id, true)}
+                        onClick={() => handleCollect(book, true)}
                       >
                         <Heart className="h-4 w-4 fill-current" />
                       </Button>
                     </div>
                     <CardContent className="p-3">
-                      <p className="font-medium truncate">{book.name}</p>
+                      <p className="font-medium truncate">{book.albumTitle}</p>
                       <p className="text-sm text-muted-foreground">
-                        {book.episodeCount}集
+                        {book.countOfSounds}集
                       </p>
-                      {book.playProgress && book.episodeCount && (
+                      {book.countOfSounds > 0 && (
                         <Progress
-                          value={(book.playProgress / book.episodeCount) * 100}
+                          value={0}
                           className="mt-2 h-1"
                         />
                       )}
@@ -209,14 +225,14 @@ export default function AudiobooksPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {recommendedBooks.map((book) => (
                 <Card
-                  key={book.id}
+                  key={`${book.platform}-${book.albumId}`}
                   className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
                 >
                   <div className="relative aspect-square">
-                    {book.cover ? (
+                    {book.albumImg ? (
                       <Image
-                        src={book.cover}
-                        alt={book.name}
+                        src={book.albumImg}
+                        alt={book.albumTitle}
                         fill
                         className="object-cover"
                       />
@@ -228,16 +244,18 @@ export default function AudiobooksPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="absolute top-2 right-2 h-8 w-8 bg-black/50 hover:bg-black/70 text-white"
-                      onClick={() => handleCollect(book.id, false)}
+                      className={`absolute top-2 right-2 h-8 w-8 bg-black/50 hover:bg-black/70 text-white ${
+                        isBookCollected(book) ? "text-red-400" : ""
+                      }`}
+                      onClick={() => handleCollect(book, isBookCollected(book))}
                     >
-                      <Heart className="h-4 w-4" />
+                      <Heart className={`h-4 w-4 ${isBookCollected(book) ? "fill-current" : ""}`} />
                     </Button>
                   </div>
                   <CardContent className="p-3">
-                    <p className="font-medium truncate">{book.name}</p>
+                    <p className="font-medium truncate">{book.albumTitle}</p>
                     <p className="text-sm text-muted-foreground">
-                      {book.episodeCount}集
+                      {book.countOfSounds}集
                     </p>
                   </CardContent>
                 </Card>

@@ -1,21 +1,28 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Play, Pause, Repeat, Repeat1, Music } from "lucide-react";
+import { Play, Pause, Repeat, Repeat1, Music, Heart, Download } from "lucide-react";
 import Image from "next/image";
-import { usePlayerStore } from "@/stores";
+import { useAuthStore, usePlayerStore, useDownloadStore } from "@/stores";
 import { searchApi } from "@/services/api";
 import toast from "react-hot-toast";
 import { Song } from "@/types";
-import { PlayerBar } from "@/components/player/PlayerBar";
+import {
+  addSongToHeartPlaylist,
+  getSongFavoriteKey,
+  loadLikedSongMapBySongList,
+  removeSongFromHeartPlaylist,
+} from "@/lib/heartPlaylist";
 
-export default function PlayListPage() {
+function PlayListPageContent() {
   const searchParams = useSearchParams();
   const keyword = searchParams.get("keyword") || "";
+  const { isAuthenticated } = useAuthStore();
+  const { downloadSong } = useDownloadStore();
 
   const {
     playSong,
@@ -28,9 +35,47 @@ export default function PlayListPage() {
 
   const [songs, setSongs] = useState<Song[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [likedSongMap, setLikedSongMap] = useState<Record<string, boolean>>({});
+  const [heartPlaylistId, setHeartPlaylistId] = useState<string | null>(null);
 
   const isCurrentSongActive = (song: Song) => {
     return currentSong?.songId === song.songId && isPlaying;
+  };
+
+  const isSongLiked = (song: Song) => {
+    return likedSongMap[getSongFavoriteKey(song)] === true;
+  };
+
+  const syncLikedStateForSongs = async (songList: Song[]) => {
+    if (!songList.length) {
+      setLikedSongMap({});
+      return;
+    }
+
+    if (!isAuthenticated) {
+      setHeartPlaylistId(null);
+      setLikedSongMap(
+        songList.reduce<Record<string, boolean>>((acc, song) => {
+          acc[getSongFavoriteKey(song)] = false;
+          return acc;
+        }, {}),
+      );
+      return;
+    }
+
+    try {
+      const { heartPlaylistId: nextPlaylistId, likedSongMap: nextLikedMap } =
+        await loadLikedSongMapBySongList(songList);
+      setHeartPlaylistId(nextPlaylistId);
+      setLikedSongMap(nextLikedMap);
+    } catch {
+      setLikedSongMap(
+        songList.reduce<Record<string, boolean>>((acc, song) => {
+          acc[getSongFavoriteKey(song)] = false;
+          return acc;
+        }, {}),
+      );
+    }
   };
 
   // 加载关键词对应歌曲列表
@@ -40,9 +85,9 @@ export default function PlayListPage() {
     const loadSongList = async () => {
       setIsLoading(true);
       try {
-        const res = await searchApi.searchSongs(keyword);
-        const list = res.data.result || [];
+        const list = await searchApi.searchSongs(keyword);
         setSongs(list);
+        await syncLikedStateForSongs(list);
 
         if (list.length > 0) {
           setPlayQueue(
@@ -56,6 +101,7 @@ export default function PlayListPage() {
       } catch (err) {
         toast.error("歌曲列表加载失败");
         setSongs([]);
+        setLikedSongMap({});
       } finally {
         setIsLoading(false);
       }
@@ -64,9 +110,52 @@ export default function PlayListPage() {
     loadSongList();
   }, [keyword, setPlayQueue, playSong]);
 
+  useEffect(() => {
+    if (!songs.length) {
+      setLikedSongMap({});
+      if (!isAuthenticated) setHeartPlaylistId(null);
+      return;
+    }
+    void syncLikedStateForSongs(songs);
+  }, [isAuthenticated]);
+
   // 点击歌曲播放
   const handlePlaySong = async (song: Song) => {
     await playSong(song, songs);
+  };
+
+  const handleToggleSongFavorite = async (song: Song) => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+
+    const songKey = getSongFavoriteKey(song);
+    const liked = isSongLiked(song);
+
+    try {
+      if (liked) {
+        const playlistId = await removeSongFromHeartPlaylist(song, heartPlaylistId);
+        if (playlistId) setHeartPlaylistId(playlistId);
+        setLikedSongMap((prev) => ({ ...prev, [songKey]: false }));
+        toast.success("已取消收藏");
+      } else {
+        const playlistId = await addSongToHeartPlaylist(song, heartPlaylistId);
+        setHeartPlaylistId(playlistId);
+        setLikedSongMap((prev) => ({ ...prev, [songKey]: true }));
+        toast.success("已收藏到我的红心歌单");
+      }
+    } catch {
+      toast.error("操作失败");
+    }
+  };
+
+  const handleDownloadSong = async (song: Song) => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+    await downloadSong(song);
   };
 
   return (
@@ -120,7 +209,7 @@ export default function PlayListPage() {
                   {song.songImg ? (
                     <Image
                       src={song.songImg}
-                      alt={song.songTitle}
+                      alt={song.songTitle || "song"}
                       fill
                       className="object-cover"
                     />
@@ -144,7 +233,35 @@ export default function PlayListPage() {
                   className="h-8 w-8"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handlePlaySong(song);
+                    void handleToggleSongFavorite(song);
+                  }}
+                >
+                  <Heart
+                    className={`h-4 w-4 ${
+                      isSongLiked(song) ? "fill-red-500 text-red-500" : ""
+                    }`}
+                  />
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleDownloadSong(song);
+                  }}
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handlePlaySong(song);
                   }}
                 >
                   {isCurrentSongActive(song) ? (
@@ -161,5 +278,19 @@ export default function PlayListPage() {
 
       {/* <PlayerBar /> */}
     </MainLayout>
+  );
+}
+
+export default function PlayListPage() {
+  return (
+    <Suspense
+      fallback={
+        <MainLayout>
+          <div className="py-20 text-center text-muted-foreground">播放列表加载中...</div>
+        </MainLayout>
+      }
+    >
+      <PlayListPageContent />
+    </Suspense>
   );
 }

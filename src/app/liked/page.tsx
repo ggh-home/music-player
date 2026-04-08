@@ -4,53 +4,84 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
-import { Play, Heart, MoreHorizontal } from "lucide-react";
-import { Song } from "@/types";
+import { Play, Heart, Download } from "lucide-react";
+import { Song, PlaylistSongEntity } from "@/types";
 import { likeApi } from "@/services/api";
-import { usePlayerStore, useAuthStore } from "@/stores";
-import { formatTime } from "@/lib/utils";
+import { usePlayerStore, useAuthStore, useDownloadStore } from "@/stores";
 import toast from "react-hot-toast";
 import Link from "next/link";
+import { getSongFavoriteKey } from "@/lib/heartPlaylist";
 
 export default function LikedSongsPage() {
+  // 全局状态
   const { isAuthenticated } = useAuthStore();
-  const { setCurrentSong, setIsPlaying, addToQueue } = usePlayerStore();
+  const { playSong } = usePlayerStore();
+  const { downloadSong } = useDownloadStore();
+
+  // 本地状态
   const [likedSongs, setLikedSongs] = useState<Song[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // 登录后自动加载收藏歌曲
   useEffect(() => {
-    if (isAuthenticated) {
-      loadLikedSongs();
-    }
+    isAuthenticated && loadLikedSongs();
   }, [isAuthenticated]);
 
+  // ============== 核心：加载喜欢的歌曲 ==============
   const loadLikedSongs = async () => {
     setIsLoading(true);
     try {
-      const res = await likeApi.getLikedSongs();
-      setLikedSongs(res.data.data || []);
+      const songs = await likeApi.getLikedSongs();
+      setLikedSongs(songs);
     } catch (error) {
-      toast.error("加载失败");
+      toast.error("加载喜欢的歌曲失败");
+      console.error("加载收藏歌曲异常：", error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handlePlay = (song: Song) => {
-    setCurrentSong(song);
-    setIsPlaying(true);
+  // ============== 工具函数：简化版（接口数据完整，无需冗余判断） ==============
+  const getSongInfo = (song: Song) => {
+    return {
+      title: song.songTitle || "未知歌曲",
+      singer: song.singerName || "未知歌手",
+      album: song.albumTitle || "未知专辑",
+      cover: song.songImg || "",
+    };
   };
 
-  const handleUnlike = async (songId: string) => {
+  // ============== 交互函数 ==============
+  // 播放歌曲
+  const handlePlay = async (song: Song) => {
+    await playSong(song, likedSongs);
+  };
+
+  const handleDownloadSong = async (song: Song) => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+    await downloadSong(song);
+  };
+
+  // 取消收藏
+  const handleUnlike = async (song: Song) => {
     try {
-      await likeApi.unlikeSong(songId);
-      setLikedSongs(likedSongs.filter((s) => s.songId !== songId));
+      await likeApi.unlikeSong(song.songId, String(song.platform));
+      // 本地更新列表
+      const targetKey = getSongFavoriteKey(song);
+      setLikedSongs((prev) =>
+        prev.filter((item) => getSongFavoriteKey(item) !== targetKey),
+      );
       toast.success("已取消喜欢");
     } catch (error) {
-      toast.error("操作失败");
+      toast.error("取消收藏失败");
+      console.error("取消收藏异常：", error);
     }
   };
 
+  // ============== 未登录拦截 ==============
   if (!isAuthenticated) {
     return (
       <MainLayout>
@@ -64,10 +95,11 @@ export default function LikedSongsPage() {
     );
   }
 
+  // ============== 页面渲染 ==============
   return (
     <MainLayout>
       <div className="space-y-6">
-        {/* Header */}
+        {/* 歌单头部 */}
         <div className="flex items-end gap-6 pb-6 border-b">
           <div className="h-40 w-40 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
             <Heart className="h-20 w-20 text-white" />
@@ -87,7 +119,7 @@ export default function LikedSongsPage() {
           </div>
         </div>
 
-        {/* Songs List */}
+        {/* 歌曲列表 */}
         {isLoading ? (
           <div className="text-center py-12">加载中...</div>
         ) : likedSongs.length === 0 ? (
@@ -96,60 +128,71 @@ export default function LikedSongsPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {likedSongs.map((song, index) => (
-              <div
-                key={song.songId}
-                className="flex items-center gap-4 p-3 rounded-lg hover:bg-accent transition-colors group"
-              >
-                <span className="text-muted-foreground w-6 text-center">
-                  {index + 1}
-                </span>
-                <div className="relative h-12 w-12 rounded overflow-hidden bg-muted">
-                  {song.cover ? (
-                    <Image
-                      src={song.cover}
-                      alt={song.songTitle}
-                      fill
-                      className="object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                      <Play className="h-5 w-5 text-muted-foreground" />
-                    </div>
-                  )}
+            {likedSongs.map((song, index) => {
+              const { title, singer, album, cover } = getSongInfo(song);
+              return (
+                <div
+                  key={`${song.platform}-${song.songId}`}
+                  className="flex items-center gap-4 p-3 rounded-lg hover:bg-accent transition-colors group"
+                >
+                  <span className="text-muted-foreground w-6 text-center">
+                    {index + 1}
+                  </span>
+
+                  {/* 歌曲封面 */}
+                  <div className="relative h-12 w-12 rounded overflow-hidden bg-muted">
+                    {cover ? (
+                      <Image
+                        src={cover}
+                        alt={title}
+                        fill
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full w-full">
+                        <Play className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 歌曲信息 */}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{title}</p>
+                    <p className="text-sm text-muted-foreground truncate">
+                      {singer} · {album}
+                    </p>
+                  </div>
+
+                  {/* 操作按钮 */}
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => void handleDownloadSong(song)}
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => void handlePlay(song)}
+                    >
+                      <Play className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-red-500"
+                      onClick={() => handleUnlike(song)}
+                    >
+                      <Heart className="h-4 w-4 fill-current" />
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{song.songTitle}</p>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {song.singerName}
-                  </p>
-                </div>
-                <span className="text-sm text-muted-foreground">
-                  {formatTime(song.duration)}
-                </span>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => handlePlay(song)}
-                  >
-                    <Play className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-red-500"
-                    onClick={() => handleUnlike(song.songId)}
-                  >
-                    <Heart className="h-4 w-4 fill-current" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

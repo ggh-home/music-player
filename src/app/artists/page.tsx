@@ -28,12 +28,54 @@ export default function ArtistsPage() {
     try {
       // 模拟加载推荐歌手
       const mockArtists: Singer[] = [
-        { id: "1", name: "周杰伦", platform: "QQ" },
-        { id: "2", name: "林俊杰", platform: "QQ" },
-        { id: "3", name: "陈奕迅", platform: "QQ" },
-        { id: "4", name: "薛之谦", platform: "QQ" },
-        { id: "5", name: "邓紫棋", platform: "QQ" },
-        { id: "6", name: "李荣浩", platform: "QQ" },
+        {
+          platform: "QQ",
+          singerId: "jaychou",
+          singerName: "周杰伦",
+          countOfSong: 0,
+          countOfAlbum: 0,
+          singerImg: "",
+        },
+        {
+          platform: "QQ",
+          singerId: "jjlin",
+          singerName: "林俊杰",
+          countOfSong: 0,
+          countOfAlbum: 0,
+          singerImg: "",
+        },
+        {
+          platform: "QQ",
+          singerId: "eason",
+          singerName: "陈奕迅",
+          countOfSong: 0,
+          countOfAlbum: 0,
+          singerImg: "",
+        },
+        {
+          platform: "QQ",
+          singerId: "jokerxue",
+          singerName: "薛之谦",
+          countOfSong: 0,
+          countOfAlbum: 0,
+          singerImg: "",
+        },
+        {
+          platform: "QQ",
+          singerId: "gem",
+          singerName: "邓紫棋",
+          countOfSong: 0,
+          countOfAlbum: 0,
+          singerImg: "",
+        },
+        {
+          platform: "QQ",
+          singerId: "lironghao",
+          singerName: "李荣浩",
+          countOfSong: 0,
+          countOfAlbum: 0,
+          singerImg: "",
+        },
       ];
       setRecommendedArtists(mockArtists);
     } catch (error) {
@@ -46,8 +88,8 @@ export default function ArtistsPage() {
 
     setIsSearching(true);
     try {
-      const res = await searchApi.searchSingers(searchKeyword);
-      setSearchResults(res.data.data || []);
+      const result = await searchApi.searchSingers(searchKeyword);
+      setSearchResults(result);
     } catch (error) {
       toast.error("搜索失败");
     } finally {

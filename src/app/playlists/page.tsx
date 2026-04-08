@@ -1,296 +1,430 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Play, Heart, MoreHorizontal, Share2, Pause } from "lucide-react";
-import { Song, Playlist } from "@/types";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Disc3,
+  FolderOpen,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+} from "lucide-react";
+import { Playlist, Song } from "@/types";
 import { playlistApi, searchApi } from "@/services/api";
-import { usePlayerStore, useAuthStore } from "@/stores";
-import { formatTime, cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores";
 import toast from "react-hot-toast";
-import { PlayerBar } from "@/components/player/PlayerBar";
 
-export default function PlaylistDetailPage() {
-  const params = useParams();
-  const id = params.id as string;
-  const { isAuthenticated } = useAuthStore();
-  const { playSong, currentSong, isPlaying } = usePlayerStore();
+type PlaylistSource = "my" | "search" | "collected";
+type PlaylistPlatform = Song["platform"] | "local";
 
-  // 页面状态
-  const [playlist, setPlaylist] = useState<Playlist | null>(null);
-  const [songs, setSongs] = useState<Song[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isCollected, setIsCollected] = useState(false);
+type PlaylistCardItem = {
+  id: string;
+  name: string;
+  cover: string;
+  creator: string;
+  songCount: number;
+  platform: PlaylistPlatform;
+  source: PlaylistSource;
+  raw: Playlist;
+};
 
-  // 防重复请求：缓存 + 锁 + 重试
-  const [songDetailCache, setSongDetailCache] = useState<Record<string, Song>>(
-    {},
-  );
-  const [requestLock, setRequestLock] = useState<Record<string, boolean>>({});
-  const [retryRecord, setRetryRecord] = useState<Record<string, number>>({});
-  const MAX_RETRY = 2;
+const isMusicPlatform = (value: unknown): value is Song["platform"] => {
+  return value === "QQ" || value === "WYY" || value === "XMLY";
+};
 
-  // 加载歌单详情
-  useEffect(() => {
-    if (id) {
-      loadPlaylistDetail();
-    }
-  }, [id]);
+const resolvePlaylistId = (playlist: Partial<Playlist>): string => {
+  if (playlist.playListId !== undefined && playlist.playListId !== null) {
+    return String(playlist.playListId);
+  }
+  if (playlist.id !== undefined && playlist.id !== null) {
+    return String(playlist.id);
+  }
+  return "";
+};
 
-  // 加载歌单数据
-  const loadPlaylistDetail = async () => {
-    setIsLoading(true);
+const resolvePlaylistName = (playlist: Partial<Playlist>): string => {
+  return playlist.playListName || playlist.name || "未命名歌单";
+};
+
+const resolvePlaylistCover = (playlist: Partial<Playlist>): string => {
+  return playlist.playListImg || playlist.cover || "";
+};
+
+const resolvePlaylistSongCount = (playlist: Partial<Playlist>): number => {
+  if (typeof playlist.countOfSong === "number") return playlist.countOfSong;
+  if (typeof playlist.songCount === "number") return playlist.songCount;
+  if (Array.isArray(playlist.songs)) return playlist.songs.length;
+  return 0;
+};
+
+const resolvePlaylistCreator = (playlist: Partial<Playlist>, fallback: string): string => {
+  return playlist.creator || fallback;
+};
+
+const toPlaylistCardItem = (
+  playlist: Partial<Playlist>,
+  source: PlaylistSource,
+  fallbackCreator: string,
+  forcedPlatform?: PlaylistPlatform,
+): PlaylistCardItem | null => {
+  const id = resolvePlaylistId(playlist);
+  if (!id) return null;
+
+  const platform =
+    forcedPlatform ||
+    (isMusicPlatform(playlist.platform) ? playlist.platform : "local");
+
+  return {
+    id,
+    name: resolvePlaylistName(playlist),
+    cover: resolvePlaylistCover(playlist),
+    creator: resolvePlaylistCreator(playlist, fallbackCreator),
+    songCount: resolvePlaylistSongCount(playlist),
+    platform,
+    source,
+    raw: playlist as Playlist,
+  };
+};
+
+export default function PlaylistsPage() {
+  const router = useRouter();
+  const { isAuthenticated, user } = useAuthStore();
+
+  const [keyword, setKeyword] = useState("");
+  const [myPlaylists, setMyPlaylists] = useState<PlaylistCardItem[]>([]);
+  const [searchResults, setSearchResults] = useState<PlaylistCardItem[]>([]);
+
+  const [isLoadingMine, setIsLoadingMine] = useState(true);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [newPlaylistName, setNewPlaylistName] = useState("");
+  const [newPlaylistDesc, setNewPlaylistDesc] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+
+  const fallbackCreator = user?.userName || "我";
+  const isSearchingMode = keyword.trim().length > 0;
+
+  const displayPlaylists = useMemo(() => {
+    return isSearchingMode ? searchResults : myPlaylists;
+  }, [isSearchingMode, searchResults, myPlaylists]);
+
+  const loadMyPlaylists = async () => {
+    setIsLoadingMine(true);
     try {
-      const res = await playlistApi.getMyPlaylists(id);
-      const songList = res.data.result || [];
-      setSongs(songList);
-
-      setPlaylist({
-        id: Number(id),
-        name: "我的歌单",
-        cover: "",
-        description: "自定义歌单",
-        creator: "我",
-        songCount: songList.length,
-        playCount: 0,
-      } as Playlist);
+      const list = await playlistApi.getMyPlaylistsWithFallback(["CUSTOM", "all", "my"]);
+      const normalized = list
+        .map((item) => toPlaylistCardItem(item, "my", fallbackCreator, "local"))
+        .filter((item): item is PlaylistCardItem => item !== null);
+      setMyPlaylists(normalized);
     } catch (error) {
-      toast.error("加载歌单失败");
+      console.error("加载我的歌单失败:", error);
+      setMyPlaylists([]);
+      toast.error("加载我的歌单失败");
     } finally {
-      setIsLoading(false);
+      setIsLoadingMine(false);
     }
   };
 
-  // 获取歌曲详情（带缓存/锁/重试）
-  const getSongDetail = async (song: Song) => {
-    const songId = song.songId;
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setIsLoadingMine(false);
+      setMyPlaylists([]);
+      return;
+    }
+    void loadMyPlaylists();
+  }, [isAuthenticated, fallbackCreator]);
 
-    if (song.songUrl && song.songLyric !== undefined) return song;
-    if (songDetailCache[songId]) return songDetailCache[songId];
-    if (requestLock[songId]) return null;
-    const currentRetry = retryRecord[songId] || 0;
-    if (currentRetry >= MAX_RETRY) {
-      toast.error(`播放失败：${song.songTitle}（已达最大重试次数）`);
-      return null;
+  const handleSearch = async (searchWord?: string) => {
+    const nextKeyword = (searchWord ?? keyword).trim();
+    if (!nextKeyword) {
+      setSearchResults([]);
+      return;
     }
 
-    setRequestLock((prev) => ({ ...prev, [songId]: true }));
-    setRetryRecord((prev) => ({ ...prev, [songId]: currentRetry + 1 }));
+    setIsSearching(true);
+    try {
+      const list = await searchApi.searchPlaylists(nextKeyword);
+      const normalized = list
+        .map((item) =>
+          toPlaylistCardItem(
+            item,
+            "search",
+            resolvePlaylistCreator(item, "未知创建者"),
+            isMusicPlatform(item.platform) ? item.platform : undefined,
+          ),
+        )
+        .filter((item): item is PlaylistCardItem => item !== null);
+      setSearchResults(normalized);
+    } catch (error) {
+      console.error("搜索歌单失败:", error);
+      setSearchResults([]);
+      toast.error("搜索歌单失败");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleOpenPlaylist = (playlist: PlaylistCardItem) => {
+    const query = new URLSearchParams();
+    query.set("source", playlist.source);
+    query.set("name", playlist.name);
+    query.set("creator", playlist.creator);
+    query.set("songCount", String(playlist.songCount));
+    if (playlist.cover) query.set("cover", playlist.cover);
+    if (playlist.platform !== "local") {
+      query.set("platform", playlist.platform);
+    }
+
+    router.push(`/playlist/${encodeURIComponent(playlist.id)}?${query.toString()}`);
+  };
+
+  const handleDeletePlaylist = async (playlist: PlaylistCardItem) => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+    if (playlist.source !== "my") {
+      toast.error("仅支持删除我的歌单");
+      return;
+    }
+
+    const confirmed = window.confirm(`确认删除歌单“${playlist.name}”吗？`);
+    if (!confirmed) return;
 
     try {
-      toast.loading(`加载歌曲：${song.songTitle}`, { id: `load-${songId}` });
-      const res = await searchApi.getSongDetail(song.platform, songId);
-      const fullSong = {
-        ...song,
-        songUrl: res.data.result.songUrl,
-        songLyric: res.data.result.songLyric,
-      };
-      setSongDetailCache((prev) => ({ ...prev, [songId]: fullSong }));
-      toast.success(`加载完成：${song.songTitle}`, { id: `load-${songId}` });
-      return fullSong;
-    } catch (err) {
-      console.error("获取歌曲详情失败:", err);
-      toast.error(
-        `加载失败：${song.songTitle}（重试 ${currentRetry + 1}/${MAX_RETRY}）`,
-        { id: `load-${songId}` },
-      );
-      return null;
-    } finally {
-      setRequestLock((prev) => ({ ...prev, [songId]: false }));
+      await playlistApi.deletePlaylist(playlist.id);
+      setMyPlaylists((prev) => prev.filter((item) => item.id !== playlist.id));
+      setSearchResults((prev) => prev.filter((item) => item.id !== playlist.id));
+      toast.success("歌单已删除");
+    } catch (error) {
+      console.error("删除歌单失败:", error);
+      toast.error("删除歌单失败");
     }
   };
 
-  // 播放单首歌曲（首次播放自动传完整列表）
-  const handlePlaySong = async (song: Song) => {
-    const fullSong = await getSongDetail(song);
-    if (!fullSong) return;
-    await playSong(fullSong, songs);
-  };
-
-  // 播放全部（自动传完整列表到播放器）
-  const handlePlayAll = async () => {
-    if (!songs.length) return;
-    const fullSong = await getSongDetail(songs[0]);
-    if (!fullSong) return;
-    await playSong(fullSong, songs);
-  };
-
-  // 收藏/取消收藏歌单
-  const handleCollect = async () => {
+  const handleCreatePlaylist = async () => {
     if (!isAuthenticated) {
       toast.error("请先登录");
       return;
     }
 
+    const name = newPlaylistName.trim();
+    if (!name) {
+      toast.error("请输入歌单名称");
+      return;
+    }
+
+    setIsCreating(true);
     try {
-      if (isCollected) {
-        await playlistApi.uncollectPlaylist(id);
-        setIsCollected(false);
-        toast.success("已取消收藏");
-      } else {
-        await playlistApi.collectPlaylist("local", id);
-        setIsCollected(true);
-        toast.success("已收藏");
-      }
+      await playlistApi.createPlaylist({
+        playListName: name,
+      });
+      toast.success("歌单创建成功");
+      setNewPlaylistName("");
+      setNewPlaylistDesc("");
+      setIsCreateDialogOpen(false);
+      await loadMyPlaylists();
     } catch (error) {
-      toast.error("操作失败");
+      console.error("创建歌单失败:", error);
+      toast.error("创建歌单失败");
+    } finally {
+      setIsCreating(false);
     }
   };
 
-  // 判断歌曲是否正在播放
-  const isSongPlaying = (song: Song) => {
-    return currentSong?.songId === song.songId && isPlaying;
+  const clearSearch = () => {
+    setKeyword("");
+    setSearchResults([]);
   };
-
-  if (isLoading) {
-    return (
-      <MainLayout>
-        <div className="flex items-center justify-center h-[60vh]">
-          <p className="text-muted-foreground">加载中...</p>
-        </div>
-      </MainLayout>
-    );
-  }
-
-  if (!playlist) {
-    return (
-      <MainLayout>
-        <div className="flex items-center justify-center h-[60vh]">
-          <p className="text-muted-foreground">歌单不存在</p>
-        </div>
-      </MainLayout>
-    );
-  }
 
   return (
     <MainLayout>
-      <div className="space-y-6 pb-24">
-        {/* 歌单头部 */}
-        <div className="flex flex-col md:flex-row gap-6 pb-6 border-b">
-          <div className="relative h-48 w-48 rounded-xl overflow-hidden flex-shrink-0 mx-auto md:mx-0">
-            {playlist.cover ? (
-              <Image
-                src={playlist.cover}
-                alt={playlist.name}
-                fill
-                className="object-cover"
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500">
-                <span className="text-6xl font-bold text-white">
-                  {playlist.name?.charAt(0) || "歌"}
-                </span>
-              </div>
-            )}
-          </div>
-          <div className="flex-1 text-center md:text-left">
-            <p className="text-sm text-muted-foreground mb-2">歌单</p>
-            <h1 className="text-3xl font-bold mb-2">{playlist.name}</h1>
-            <p className="text-muted-foreground mb-4">{playlist.description}</p>
-            <div className="flex items-center justify-center md:justify-start gap-4 text-sm text-muted-foreground mb-4">
-              <span>创建者: {playlist.creator}</span>
-              <span>{playlist.songCount}首歌曲</span>
-              <span>
-                {playlist.playCount && playlist.playCount >= 10000
-                  ? (playlist.playCount / 10000).toFixed(1)
-                  : playlist.playCount || 0}
-                万播放
-              </span>
+      <div className="space-y-6 pb-6">
+        <section className="rounded-2xl border bg-card p-5 md:p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold">歌单中心</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {isSearchingMode
+                  ? `搜索结果：${searchResults.length} 个歌单`
+                  : `我的歌单：${myPlaylists.length} 个`}
+              </p>
             </div>
-            <div className="flex items-center justify-center md:justify-start gap-2">
-              <Button onClick={handlePlayAll}>
-                <Play className="h-4 w-4 mr-2" />
-                播放全部
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => void loadMyPlaylists()}
+                disabled={isLoadingMine || !isAuthenticated}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                刷新
               </Button>
-              <Button variant="outline" onClick={handleCollect}>
-                <Heart
-                  className={cn("h-4 w-4 mr-2", isCollected && "fill-current")}
-                />
-                {isCollected ? "已收藏" : "收藏"}
-              </Button>
-              <Button variant="outline" size="icon">
-                <Share2 className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="icon">
-                <MoreHorizontal className="h-4 w-4" />
+              <Button
+                onClick={() => setIsCreateDialogOpen(true)}
+                disabled={!isAuthenticated}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                添加歌单
               </Button>
             </div>
           </div>
-        </div>
 
-        {/* 歌曲列表 */}
-        <div className="space-y-2">
-          <div className="flex items-center px-3 py-2 text-sm text-muted-foreground border-b">
-            <span className="w-8 text-center">序号</span>
-            <span className="flex-1 px-2">名称</span>
-            <span className="w-32 text-left hidden md:block">专辑</span>
-            <span className="w-12 hidden md:block text-center">时长</span>
-            <span className="w-8 hidden md:block"></span>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-10"
+                placeholder="搜索歌单名称、创建者..."
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    void handleSearch();
+                  }
+                }}
+              />
+            </div>
+            <Button onClick={() => void handleSearch()} disabled={isSearching}>
+              {isSearching ? "搜索中..." : "搜索歌单"}
+            </Button>
+            <Button variant="ghost" onClick={clearSearch} disabled={!keyword.trim()}>
+              清空
+            </Button>
           </div>
-          {songs.map((song, index) => (
-            <div
-              key={song.songId}
-              className="flex items-center px-3 py-3 rounded-lg hover:bg-accent transition-colors group cursor-pointer"
-              onClick={() => handlePlaySong(song)}
-            >
-              <span className="w-8 text-center text-muted-foreground">
-                {index + 1}
-              </span>
-              <div className="flex-1 min-w-0 flex items-center gap-2 px-2">
-                <div className="relative h-10 w-10 rounded overflow-hidden bg-muted flex-shrink-0">
-                  {song.songImg ? (
+        </section>
+
+        {!isAuthenticated && !isSearchingMode ? (
+          <section className="rounded-xl border border-dashed p-10 text-center">
+            <p className="text-muted-foreground">登录后可创建和管理你的歌单</p>
+            <Button className="mt-4" asChild>
+              <Link href="/login">去登录</Link>
+            </Button>
+          </section>
+        ) : isLoadingMine && !isSearchingMode ? (
+          <section className="flex h-[35vh] items-center justify-center text-muted-foreground">
+            加载歌单中...
+          </section>
+        ) : isSearching && isSearchingMode ? (
+          <section className="flex h-[35vh] items-center justify-center text-muted-foreground">
+            正在搜索歌单...
+          </section>
+        ) : displayPlaylists.length === 0 ? (
+          <section className="rounded-xl border border-dashed p-10 text-center">
+            <p className="text-muted-foreground">
+              {isSearchingMode ? "没有找到匹配的歌单" : "暂无歌单，先创建一个吧"}
+            </p>
+          </section>
+        ) : (
+          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {displayPlaylists.map((playlist) => (
+              <Card
+                key={`${playlist.source}-${playlist.id}`}
+                className="group overflow-hidden border hover:border-primary/40"
+              >
+                <button
+                  type="button"
+                  className="relative block aspect-square w-full overflow-hidden bg-muted"
+                  onClick={() => handleOpenPlaylist(playlist)}
+                >
+                  {playlist.cover ? (
                     <Image
-                      src={song.songImg}
-                      alt={song.songTitle}
+                      src={playlist.cover}
+                      alt={playlist.name}
                       fill
-                      className="object-cover"
+                      className="object-cover transition-transform duration-300 group-hover:scale-105"
                     />
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                      <Play className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-sky-500 to-blue-700">
+                      <Disc3 className="h-12 w-12 text-white" />
                     </div>
                   )}
-                </div>
-                <div className="min-w-0">
-                  <p className="font-medium truncate">{song.songTitle}</p>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {song.singerName}
-                  </p>
-                </div>
-              </div>
-              <span className="w-32 text-left text-sm text-muted-foreground truncate hidden md:block">
-                {song.albumTitle}
-              </span>
-              <span className="w-12 text-sm text-muted-foreground hidden md:block text-center">
-                {formatTime(song.duration)}
-              </span>
-              <div className="w-8 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity hidden md:block">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handlePlaySong(song);
-                  }}
-                >
-                  {isSongPlaying(song) ? (
-                    <Pause className="h-4 w-4" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
+                </button>
+
+                <CardContent className="space-y-3 p-4">
+                  <div>
+                    <p className="line-clamp-1 font-semibold">{playlist.name}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      创建者：{playlist.creator} · {playlist.songCount} 首
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" onClick={() => handleOpenPlaylist(playlist)}>
+                      <FolderOpen className="mr-2 h-4 w-4" />
+                      打开
+                    </Button>
+                    {playlist.source === "my" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleDeletePlaylist(playlist)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        删除
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </section>
+        )}
       </div>
 
-      <PlayerBar />
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>添加歌单</DialogTitle>
+            <DialogDescription>
+              创建一个新歌单，稍后可在歌单详情页中添加歌曲。
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <Input
+              placeholder="歌单名称"
+              value={newPlaylistName}
+              onChange={(e) => setNewPlaylistName(e.target.value)}
+              maxLength={40}
+            />
+            <Input
+              placeholder="歌单描述（可选）"
+              value={newPlaylistDesc}
+              onChange={(e) => setNewPlaylistDesc(e.target.value)}
+              maxLength={120}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsCreateDialogOpen(false)}
+              disabled={isCreating}
+            >
+              取消
+            </Button>
+            <Button onClick={() => void handleCreatePlaylist()} disabled={isCreating}>
+              {isCreating ? "创建中..." : "创建歌单"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 }

@@ -29,11 +29,15 @@ export default function SettingsPage() {
 
   const handleUpgrade = async () => {
     try {
-      const res = await userApi.upgradeVip();
-      // 跳转到微信支付
-      window.location.href = res.data.data.payUrl;
+      const weiXin = user?.weiXin;
+      if (!weiXin) {
+        toast.error("当前账号未绑定微信号，无法升级");
+        return;
+      }
+      await userApi.upgradeVip(weiXin);
+      toast.success("会员信息已刷新");
     } catch (error) {
-      toast.error("获取支付链接失败");
+      toast.error((error as Error)?.message || "升级会员失败");
     }
   };
 
@@ -199,16 +203,18 @@ export default function SettingsPage() {
                   <Label>默认音质</Label>
                   <Select
                     value={quality}
-                    onValueChange={(v) => setQuality(v as any)}
+                    onValueChange={(v) => setQuality(v as "320" | "flac" | "atmos_51" | "exhigh" | "lossless" | "sky")}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="standard">标准</SelectItem>
-                      <SelectItem value="high">高品质</SelectItem>
-                      <SelectItem value="lossless">无损</SelectItem>
-                      <SelectItem value="hires">Hi-Res</SelectItem>
+                      <SelectItem value="320">标准 (320)</SelectItem>
+                      <SelectItem value="exhigh">高品质 (exhigh)</SelectItem>
+                      <SelectItem value="lossless">无损 (lossless)</SelectItem>
+                      <SelectItem value="flac">FLAC</SelectItem>
+                      <SelectItem value="atmos_51">杜比全景声</SelectItem>
+                      <SelectItem value="sky">沉浸音质 (sky)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

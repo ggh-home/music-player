@@ -21,6 +21,24 @@ const mergeSongDetail = (song: Song, fallback?: Song | null): Song => {
   };
 };
 
+const normalizePlatform = (value: unknown): Song["platform"] | null => {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  if (normalized === "QQ") return "QQ";
+  if (normalized === "WYY" || normalized === "NETEASE") return "WYY";
+  if (normalized === "XMLY" || normalized === "XIMALAYA") return "XMLY";
+  return null;
+};
+
+const readSongPlatform = (song: Song): Song["platform"] | null => {
+  const platformFromSong = normalizePlatform(song.platform);
+  if (platformFromSong) return platformFromSong;
+
+  const platformFromDetail = normalizePlatform(song.rawDetail?.platform);
+  if (platformFromDetail) return platformFromDetail;
+
+  return null;
+};
+
 interface PlayerState {
   isPlaying: boolean;
   currentSong: Song | null;
@@ -105,7 +123,7 @@ export const usePlayerStore = create<PlayerState>()(
       isMuted: false,
       playMode: "list",
       playbackRate: 1,
-      quality: "high",
+      quality: "exhigh",
       playQueue: [],
       currentIndex: -1,
       showPlayer: false,
@@ -134,7 +152,7 @@ export const usePlayerStore = create<PlayerState>()(
             isSameSong(song, currentSong) ? currentSong : songDetailCache[song.songId]
           );
           const queueIndex = playQueue.findIndex(
-            (item) => item.type === "song" && item.id === nextSong.songId
+            (item) => item.type === "song" && isSameSong(item.data as Song, nextSong)
           );
           const nextIndex =
             queueIndex >= 0 ? queueIndex : isSameSong(nextSong, currentSong) ? currentIndex : -1;
@@ -213,9 +231,20 @@ export const usePlayerStore = create<PlayerState>()(
 
       setPlayQueue: (queue) => {
         const { currentType, currentSong, currentEpisode } = get();
-        const currentId =
-          currentType === "song" ? currentSong?.songId : currentEpisode?.id;
-        const nextIndex = currentId ? queue.findIndex((item) => item.id === currentId) : -1;
+        let nextIndex = -1;
+
+        if (currentType === "song" && currentSong) {
+          nextIndex = queue.findIndex(
+            (item) => item.type === "song" && isSameSong(item.data as Song, currentSong)
+          );
+        }
+
+        if (currentType === "audiobook" && currentEpisode) {
+          nextIndex = queue.findIndex(
+            (item) => item.type === "audiobook" && item.id === currentEpisode.id
+          );
+        }
+
         set({ playQueue: queue, currentIndex: nextIndex });
       },
 
@@ -387,12 +416,17 @@ export const usePlayerStore = create<PlayerState>()(
           song,
           isSameSong(song, currentSong) ? currentSong : songDetailCache[songId]
         );
+        const platform = readSongPlatform(hydratedSong);
 
         if (hasSongDetail(hydratedSong)) {
           set((state) => ({
             songDetailCache: { ...state.songDetailCache, [songId]: hydratedSong },
           }));
           return hydratedSong;
+        }
+        if (!platform) {
+          toast.error(`歌曲 ${song.songTitle} 缺少平台信息，无法加载`);
+          return null;
         }
         if (requestLock[songId]) {
           return null;
@@ -410,12 +444,12 @@ export const usePlayerStore = create<PlayerState>()(
 
         try {
           toast.loading(`正在加载: ${song.songTitle}`, { id: `fetch-${songId}` });
-          const res = await searchApi.getSongDetail(song.platform, songId);
+          const detail = await searchApi.getSongDetail(platform, songId);
           const fullSong = mergeSongDetail(
             {
               ...song,
-              songUrl: res.data.result.songUrl,
-              songLyric: res.data.result.songLyric,
+              songUrl: detail.songUrl,
+              songLyric: detail.songLyric,
             },
             hydratedSong
           );
@@ -541,7 +575,9 @@ export const usePlayerStore = create<PlayerState>()(
             };
           });
 
-          const targetIndex = newPlayQueue.findIndex((item) => item.id === targetSong.songId);
+          const targetIndex = newPlayQueue.findIndex(
+            (item) => item.type === "song" && isSameSong(item.data as Song, targetSong)
+          );
           if (targetIndex === -1) {
             toast.error("歌曲不在播放列表中", { id: "load-playlist" });
             return;

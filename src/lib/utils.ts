@@ -134,7 +134,12 @@ export function parseLRC(lrcText: string): LyricLine[] {
     if (!trimLine) continue;
 
     // 提取所有时间标签
-    const timeMatches = [...trimLine.matchAll(timeRegex)];
+    const timeMatches: RegExpExecArray[] = [];
+    timeRegex.lastIndex = 0;
+    let matchResult: RegExpExecArray | null = null;
+    while ((matchResult = timeRegex.exec(trimLine)) !== null) {
+      timeMatches.push(matchResult);
+    }
     if (timeMatches.length === 0) continue;
 
     // 提取歌词文本（去掉所有时间标签）

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { MainLayout } from "@/components/layout/MainLayout";
@@ -8,18 +8,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
-import { Search, Play, Heart, Clock, X, History, Pause } from "lucide-react";
+import { Search, Play, Heart, Clock, X, History, Pause, Download } from "lucide-react";
 import { Song, Singer, Playlist, Audiobook } from "@/types";
 import { searchApi } from "@/services/api";
-import { useSearchStore, usePlayerStore } from "@/stores";
-import { formatTime } from "@/lib/utils";
+import { useSearchStore, usePlayerStore, useAuthStore, useDownloadStore } from "@/stores";
+import {
+  addSongToHeartPlaylist,
+  getSongFavoriteKey,
+  loadLikedSongMapBySongList,
+  removeSongFromHeartPlaylist,
+} from "@/lib/heartPlaylist";
 import toast from "react-hot-toast";
 
-export default function SearchPage() {
+function SearchPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const initialQuery = searchParams.get("q") || "";
   const { playSong, currentSong, isPlaying } = usePlayerStore();
+  const { downloadSong } = useDownloadStore();
+  const { isAuthenticated } = useAuthStore();
 
   const [keyword, setKeyword] = useState(initialQuery);
   const [searchKeyword, setSearchKeyword] = useState(initialQuery);
@@ -28,6 +35,10 @@ export default function SearchPage() {
   const [singers, setSingers] = useState<Singer[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [audiobooks, setAudiobooks] = useState<Audiobook[]>([]);
+  // [收藏功能新增 START] 搜索页红心收藏状态
+  const [likedSongMap, setLikedSongMap] = useState<Record<string, boolean>>({});
+  const [heartPlaylistId, setHeartPlaylistId] = useState<string | null>(null);
+  // [收藏功能新增 END] 搜索页红心收藏状态
 
   const { history, addHistory, removeHistory, clearHistory } = useSearchStore();
 
@@ -38,6 +49,17 @@ export default function SearchPage() {
     }
   }, [initialQuery]);
 
+  // [收藏功能新增 START] 登录态变化时，刷新当前列表红心状态
+  useEffect(() => {
+    if (!songs.length) {
+      setLikedSongMap({});
+      if (!isAuthenticated) setHeartPlaylistId(null);
+      return;
+    }
+    void syncLikedStateForSongs(songs);
+  }, [isAuthenticated]);
+  // [收藏功能新增 END] 登录态变化时，刷新当前列表红心状态
+
   // 执行搜索
   const handleSearch = async (searchWord: string = keyword) => {
     if (!searchWord.trim()) return;
@@ -47,14 +69,28 @@ export default function SearchPage() {
     addHistory(searchWord, "song");
 
     try {
-      const songsRes = await searchApi.searchSongs(searchWord);
-      setSongs(songsRes.data.result || []);
+      const nextSongs = await searchApi.searchSongs(searchWord);
+      setSongs(nextSongs);
+      // [收藏功能新增] 搜索结果返回后同步歌曲红心状态
+      await syncLikedStateForSongs(nextSongs);
 
       const singersRes = await searchApi.searchSingers(searchWord);
-      setSingers(singersRes.data.result || []);
+      setSingers(singersRes);
 
       const playlistsRes = await searchApi.searchPlaylists(searchWord);
-      setPlaylists(playlistsRes.data.result || []);
+      setPlaylists(playlistsRes);
+
+      const soundAlbums = await searchApi.searchSoundAlbums(searchWord);
+      setAudiobooks(
+        soundAlbums.map((item) => ({
+          id: item.albumId,
+          name: item.albumTitle,
+          cover: item.albumImg,
+          description: item.desc,
+          episodeCount: item.countOfSounds,
+          isCollected: Boolean(item.isCollected),
+        }))
+      );
     } catch (error) {
       toast.error("搜索失败");
     } finally {
@@ -62,17 +98,143 @@ export default function SearchPage() {
     }
   };
 
+  // [收藏功能新增 START] 红心歌单状态与收藏切换
+  const syncLikedStateForSongs = async (songList: Song[]) => {
+    if (!songList.length) {
+      setLikedSongMap({});
+      return;
+    }
+
+    if (!isAuthenticated) {
+      setHeartPlaylistId(null);
+      setLikedSongMap(
+        songList.reduce<Record<string, boolean>>((acc, song) => {
+          acc[getSongFavoriteKey(song)] = false;
+          return acc;
+        }, {})
+      );
+      return;
+    }
+
+    try {
+      const { heartPlaylistId: nextPlaylistId, likedSongMap: nextLikedMap } =
+        await loadLikedSongMapBySongList(songList);
+      setHeartPlaylistId(nextPlaylistId);
+      setLikedSongMap(nextLikedMap);
+    } catch {
+      setLikedSongMap(
+        songList.reduce<Record<string, boolean>>((acc, song) => {
+          acc[getSongFavoriteKey(song)] = false;
+          return acc;
+        }, {})
+      );
+    }
+  };
+
+  const isSongLiked = (song: Song) => {
+    return likedSongMap[getSongFavoriteKey(song)] === true;
+  };
+
+  const handleToggleSongFavorite = async (song: Song) => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+
+    const songKey = getSongFavoriteKey(song);
+    const liked = isSongLiked(song);
+
+    try {
+      if (liked) {
+        const playlistId = await removeSongFromHeartPlaylist(song, heartPlaylistId);
+        if (playlistId) setHeartPlaylistId(playlistId);
+        setLikedSongMap((prev) => ({ ...prev, [songKey]: false }));
+        toast.success("已取消收藏");
+      } else {
+        const playlistId = await addSongToHeartPlaylist(song, heartPlaylistId);
+        setHeartPlaylistId(playlistId);
+        setLikedSongMap((prev) => ({ ...prev, [songKey]: true }));
+        toast.success("已收藏到我的红心歌单");
+      }
+    } catch {
+      toast.error("操作失败");
+    }
+  };
+  // [收藏功能新增 END] 红心歌单状态与收藏切换
+
   // 播放歌曲：直接调用 store.playSong，让 store 内部获取详情
   const handlePlaySong = async (song: Song) => {
     await playSong(song, songs);
   };
 
-  const goToPlaylist = (name: string) => {
-    router.push(`/play-list?keyword=${encodeURIComponent(name)}`);
+  const getPlaylistId = (playlist: Playlist) => {
+    if (playlist.playListId !== undefined && playlist.playListId !== null) {
+      return String(playlist.playListId);
+    }
+    if (playlist.id !== undefined && playlist.id !== null) {
+      return String(playlist.id);
+    }
+    return "";
+  };
+
+  const getPlaylistName = (playlist: Playlist) => {
+    return playlist.playListName || playlist.name || "未命名歌单";
+  };
+
+  const getPlaylistCover = (playlist: Playlist) => {
+    return playlist.playListImg || playlist.cover || "";
+  };
+
+  const getPlaylistSongCount = (playlist: Playlist) => {
+    if (typeof playlist.countOfSong === "number") return playlist.countOfSong;
+    if (typeof playlist.songCount === "number") return playlist.songCount;
+    return 0;
+  };
+
+  const getPlaylistCreator = (playlist: Playlist) => {
+    return playlist.creator || "未知创建者";
+  };
+
+  const getPlaylistPlatform = (playlist: Playlist): Song["platform"] | null => {
+    const platform = playlist.platform as string | undefined;
+    if (platform === "QQ" || platform === "WYY" || platform === "XMLY") {
+      return platform as Song["platform"];
+    }
+    return null;
+  };
+
+  const goToPlaylist = (playlist: Playlist) => {
+    const playlistId = getPlaylistId(playlist);
+    if (!playlistId) {
+      toast.error("歌单信息不完整");
+      return;
+    }
+
+    const query = new URLSearchParams();
+    query.set("source", "search");
+    query.set("name", getPlaylistName(playlist));
+    query.set("creator", getPlaylistCreator(playlist));
+    query.set("songCount", String(getPlaylistSongCount(playlist)));
+
+    const cover = getPlaylistCover(playlist);
+    if (cover) query.set("cover", cover);
+
+    const platform = getPlaylistPlatform(playlist);
+    if (platform) query.set("platform", platform);
+
+    router.push(`/playlist/${encodeURIComponent(playlistId)}?${query.toString()}`);
   };
 
   const isSongPlaying = (song: Song) => {
     return currentSong?.songId === song.songId && isPlaying;
+  };
+
+  const handleDownloadSong = async (song: Song) => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+    await downloadSong(song);
   };
 
   return (
@@ -165,7 +327,7 @@ export default function SearchPage() {
                       {song.songImg ? (
                         <Image
                           src={song.songImg}
-                          alt={song.songTitle}
+                          alt={song.songTitle || "song"}
                           fill
                           className="object-cover"
                         />
@@ -200,8 +362,29 @@ export default function SearchPage() {
                           <Play className="h-4 w-4" />
                         )}
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <Heart className="h-4 w-4" />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleDownloadSong(song);
+                        }}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={`h-8 w-8 ${isSongLiked(song) ? "text-red-500" : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleSongFavorite(song);
+                        }}
+                      >
+                        <Heart
+                          className={`h-4 w-4 ${isSongLiked(song) ? "fill-current" : ""}`}
+                        />
                       </Button>
                     </div>
                   </div>
@@ -259,15 +442,15 @@ export default function SearchPage() {
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                   {playlists.map((playlist) => (
                     <Card
-                      key={playlist.id}
+                      key={`${getPlaylistId(playlist)}-${getPlaylistName(playlist)}`}
                       className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
-                      onClick={() => goToPlaylist(playlist.name)}
+                      onClick={() => goToPlaylist(playlist)}
                     >
                       <div className="relative aspect-square">
-                        {playlist.cover ? (
+                        {getPlaylistCover(playlist) ? (
                           <Image
-                            src={playlist.cover}
-                            alt={playlist.name}
+                            src={getPlaylistCover(playlist)}
+                            alt={getPlaylistName(playlist)}
                             fill
                             className="object-cover"
                           />
@@ -278,9 +461,9 @@ export default function SearchPage() {
                         )}
                       </div>
                       <CardContent className="p-3">
-                        <p className="font-medium truncate">{playlist.name}</p>
+                        <p className="font-medium truncate">{getPlaylistName(playlist)}</p>
                         <p className="text-sm text-muted-foreground">
-                          {playlist.songCount}首
+                          创建者：{getPlaylistCreator(playlist)} · {getPlaylistSongCount(playlist)}首
                         </p>
                       </CardContent>
                     </Card>
@@ -364,5 +547,19 @@ export default function SearchPage() {
         )}
       </div>
     </MainLayout>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense
+      fallback={
+        <MainLayout>
+          <div className="py-20 text-center text-muted-foreground">搜索页加载中...</div>
+        </MainLayout>
+      }
+    >
+      <SearchPageContent />
+    </Suspense>
   );
 }

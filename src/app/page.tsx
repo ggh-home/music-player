@@ -1,17 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Play, Heart, MoreHorizontal, Pause } from "lucide-react";
-import { Song, Playlist, Singer, PlayQueueItem } from "@/types";
-import { usePlayerStore, useAuthStore } from "@/stores";
+import { Play, Heart, MoreHorizontal, Pause, Download } from "lucide-react";
+import { Song } from "@/types";
+import { usePlayerStore, useAuthStore, useDownloadStore } from "@/stores";
 import { searchApi } from "@/services/api";
+import {
+  addSongToHeartPlaylist,
+  getSongFavoriteKey,
+  loadLikedSongMapBySongList,
+  removeSongFromHeartPlaylist,
+} from "@/lib/heartPlaylist";
+import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 // Mock 数据
@@ -81,10 +88,9 @@ export default function HomePage() {
     currentSong,
     isPlaying,
     playSong,
-    setIsPlaying,
-    addToQueue,
-    setPlayQueue,
   } = usePlayerStore();
+  const { downloadSong } = useDownloadStore();
+  const { isAuthenticated, checkLoginStatus } = useAuthStore();
 
   const [activeBanner, setActiveBanner] = useState(0);
   const [songs, setSongs] = useState<Song[]>([]);
@@ -92,6 +98,11 @@ export default function HomePage() {
   const [activeTab, setActiveTab] = useState<"new" | "hot" | "recommend">(
     "new",
   );
+  const hasCheckedLoginRef = useRef(false);
+  // [收藏功能新增 START] 首页歌曲红心收藏状态
+  const [likedSongMap, setLikedSongMap] = useState<Record<string, boolean>>({});
+  const [heartPlaylistId, setHeartPlaylistId] = useState<string | null>(null);
+  // [收藏功能新增 END] 首页歌曲红心收藏状态
 
   // Banner 自动轮播
   useEffect(() => {
@@ -103,16 +114,34 @@ export default function HomePage() {
     return () => clearInterval(timer);
   }, []);
 
+  // 首页进入时校验登录状态并提示
+  useEffect(() => {
+    if (hasCheckedLoginRef.current) return;
+    hasCheckedLoginRef.current = true;
+
+    const status = checkLoginStatus();
+    if (status === "expired") {
+      toast.error("登录已过期，请重新登录");
+      return;
+    }
+    if (status === "unauthenticated") {
+      toast("请先登录后体验完整功能");
+    }
+  }, [checkLoginStatus]);
+
   // 统一搜索
   const handleSearch = async (keyword: string) => {
     if (!keyword.trim()) return;
     setIsLoading(true);
     try {
-      const songsRes = await searchApi.searchSongs(keyword);
-      setSongs(songsRes.data.result || []);
+      const nextSongs = await searchApi.searchSongs(keyword);
+      setSongs(nextSongs);
+      // [收藏功能新增] Tab 切歌列表后同步红心状态
+      await syncLikedStateForSongs(nextSongs);
     } catch (error) {
       toast.error("加载失败");
       setSongs([]);
+      setLikedSongMap({});
     } finally {
       setIsLoading(false);
     }
@@ -134,16 +163,85 @@ export default function HomePage() {
     handleSearch(TAB_SEARCH_KEY_MAP.new);
   }, []);
 
+  // [收藏功能新增 START] 登录态变化时刷新当前列表红心状态
+  useEffect(() => {
+    if (!songs.length) {
+      setLikedSongMap({});
+      if (!isAuthenticated) setHeartPlaylistId(null);
+      return;
+    }
+    void syncLikedStateForSongs(songs);
+  }, [isAuthenticated]);
+  // [收藏功能新增 END] 登录态变化时刷新当前列表红心状态
+
   // 播放/暂停切换
   const togglePlayPause = async (song: Song) => {
     await playSong(song, songs);
   };
 
-  // 添加到播放队列
-  const handleAddToQueue = (song: Song) => {
-    addToQueue({ id: song.songId, type: "song", data: song });
-    toast.success(`已添加到播放队列: ${song.songTitle}`);
+  // [收藏功能新增 START] 红心歌单状态与收藏切换
+  const syncLikedStateForSongs = async (songList: Song[]) => {
+    if (!songList.length) {
+      setLikedSongMap({});
+      return;
+    }
+
+    if (!isAuthenticated) {
+      setHeartPlaylistId(null);
+      setLikedSongMap(
+        songList.reduce<Record<string, boolean>>((acc, song) => {
+          acc[getSongFavoriteKey(song)] = false;
+          return acc;
+        }, {}),
+      );
+      return;
+    }
+
+    try {
+      const { heartPlaylistId: nextPlaylistId, likedSongMap: nextLikedMap } =
+        await loadLikedSongMapBySongList(songList);
+      setHeartPlaylistId(nextPlaylistId);
+      setLikedSongMap(nextLikedMap);
+    } catch {
+      setLikedSongMap(
+        songList.reduce<Record<string, boolean>>((acc, song) => {
+          acc[getSongFavoriteKey(song)] = false;
+          return acc;
+        }, {}),
+      );
+    }
   };
+
+  const isSongLiked = (song: Song) => {
+    return likedSongMap[getSongFavoriteKey(song)] === true;
+  };
+
+  const handleToggleSongFavorite = async (song: Song) => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+
+    const songKey = getSongFavoriteKey(song);
+    const liked = isSongLiked(song);
+
+    try {
+      if (liked) {
+        const playlistId = await removeSongFromHeartPlaylist(song, heartPlaylistId);
+        if (playlistId) setHeartPlaylistId(playlistId);
+        setLikedSongMap((prev) => ({ ...prev, [songKey]: false }));
+        toast.success("已取消收藏");
+      } else {
+        const playlistId = await addSongToHeartPlaylist(song, heartPlaylistId);
+        setHeartPlaylistId(playlistId);
+        setLikedSongMap((prev) => ({ ...prev, [songKey]: true }));
+        toast.success("已收藏到我的红心歌单");
+      }
+    } catch {
+      toast.error("操作失败");
+    }
+  };
+  // [收藏功能新增 END] 红心歌单状态与收藏切换
 
   // 跳转播放页
   const goToPlayPage = (keyword: string) => {
@@ -152,6 +250,14 @@ export default function HomePage() {
 
   const isSongPlaying = (song: Song) => {
     return currentSong?.songId === song.songId && isPlaying;
+  };
+
+  const handleDownloadSong = async (song: Song) => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+    await downloadSong(song);
   };
 
   return (
@@ -287,7 +393,7 @@ export default function HomePage() {
                         {song.songImg ? (
                           <Image
                             src={song.songImg}
-                            alt={song.songTitle}
+                            alt={song.songTitle || "song"}
                             fill
                             className="object-cover"
                           />
@@ -325,13 +431,24 @@ export default function HomePage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          className={cn("h-8 w-8", isSongLiked(song) && "text-red-500")}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleSongFavorite(song);
+                          }}
+                        >
+                          <Heart className={cn("h-4 w-4", isSongLiked(song) && "fill-current")} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="h-8 w-8"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleAddToQueue(song);
+                            void handleDownloadSong(song);
                           }}
                         >
-                          <Heart className="h-4 w-4" />
+                          <Download className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"

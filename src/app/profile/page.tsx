@@ -38,10 +38,15 @@ export default function ProfilePage() {
 
   const handleUpgrade = async () => {
     try {
-      const res = await userApi.upgradeVip();
-      window.location.href = res.data.data.payUrl;
+      const weiXin = user?.weiXin;
+      if (!weiXin) {
+        toast.error("当前账号未绑定微信号，无法升级");
+        return;
+      }
+      await userApi.upgradeVip(weiXin);
+      toast.success("会员信息已刷新");
     } catch (error) {
-      toast.error("获取支付链接失败");
+      toast.error((error as Error)?.message || "升级会员失败");
     }
   };
 

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -43,7 +43,19 @@ interface SidebarProps {
 
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    const allRoutes = [
+      ...mainNavItems.map((item) => item.href),
+      ...libraryNavItems.map((item) => item.href),
+      ...bottomNavItems.map((item) => item.href),
+    ];
+    allRoutes.forEach((route) => {
+      router.prefetch(route);
+    });
+  }, [router]);
 
   const isActive = (href: string) => {
     if (href === "/") {

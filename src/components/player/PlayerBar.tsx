@@ -26,9 +26,16 @@ import {
   ChevronUp,
   ChevronDown,
   Mic2,
+  X,
 } from "lucide-react";
-import { usePlayerStore, useAuthStore } from "@/stores";
-import { likeApi } from "@/services/api";
+import { usePlayerStore, useAuthStore, useDownloadStore } from "@/stores";
+import { AudioEpisode, Song } from "@/types";
+import {
+  addSongToHeartPlaylist,
+  getSongFavoriteKey,
+  loadLikedSongMapBySongList,
+  removeSongFromHeartPlaylist,
+} from "@/lib/heartPlaylist";
 import toast from "react-hot-toast";
 import { LyricPanel } from "@/components/player/LyricPanel";
 import type { LyricLine } from "@/components/player/LyricPanel";
@@ -59,10 +66,18 @@ export function PlayerBar() {
     fetchSongDetail,
     setShowPlaylist,
     setShowLyric,
+    showPlaylist,
+    playQueue,
+    currentIndex,
+    playAtIndex,
+    removeFromQueue,
   } = usePlayerStore();
+  const { downloadSong } = useDownloadStore();
 
   const { isAuthenticated } = useAuthStore();
   const [isLiked, setIsLiked] = useState(false);
+  // [收藏功能新增] PlayerBar 当前曲目对应的红心歌单 ID
+  const [heartPlaylistId, setHeartPlaylistId] = useState<string | null>(null);
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekValue, setSeekValue] = useState(0);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -95,15 +110,38 @@ export function PlayerBar() {
     currentType === "song" ? currentSong?.songUrl : currentEpisode?.url;
   const coverImage = currentType === "song" ? currentSong?.songImg : undefined;
 
-  // 检查是否已喜欢
-  // useEffect(() => {
-  //   if (currentSong && isAuthenticated) {
-  //     likeApi
-  //       .checkLiked(currentSong.songId)
-  //       .then((res) => setIsLiked(res.data.data))
-  //       .catch(() => setIsLiked(false));
-  //   }
-  // }, [currentSong, isAuthenticated]);
+  // [收藏功能新增 START] 切歌时查询当前曲目是否在“我的红心歌单”
+  useEffect(() => {
+    if (!isAuthenticated || !currentSong || currentType !== "song") {
+      setIsLiked(false);
+      if (!isAuthenticated) setHeartPlaylistId(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const syncCurrentSongLikeState = async () => {
+      try {
+        const { heartPlaylistId: nextPlaylistId, likedSongMap } =
+          await loadLikedSongMapBySongList([currentSong]);
+
+        if (cancelled) return;
+
+        setHeartPlaylistId(nextPlaylistId);
+        setIsLiked(likedSongMap[getSongFavoriteKey(currentSong)] === true);
+      } catch {
+        if (cancelled) return;
+        setIsLiked(false);
+      }
+    };
+
+    void syncCurrentSongLikeState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSong?.songId, currentSong?.platform, currentType, isAuthenticated]);
+  // [收藏功能新增 END] 切歌时查询当前曲目是否在“我的红心歌单”
 
   // 兼容直接 setCurrentSong 的场景：缺少 songUrl 时按需补详情
   useEffect(() => {
@@ -260,21 +298,35 @@ export function PlayerBar() {
       toast.error("请先登录");
       return;
     }
-    if (!currentSong) return;
+    if (!currentSong || currentType !== "song") return;
 
     try {
       if (isLiked) {
-        await likeApi.unlikeSong(currentSong.songId);
+        const playlistId = await removeSongFromHeartPlaylist(currentSong, heartPlaylistId);
+        if (playlistId) setHeartPlaylistId(playlistId);
         setIsLiked(false);
-        toast.success("已取消喜欢");
+        toast.success("已取消收藏");
       } else {
-        await likeApi.likeSong(currentSong.songId, currentSong.platform);
+        const playlistId = await addSongToHeartPlaylist(currentSong, heartPlaylistId);
+        setHeartPlaylistId(playlistId);
         setIsLiked(true);
-        toast.success("已添加到喜欢的歌曲");
+        toast.success("已收藏到我的红心歌单");
       }
     } catch {
       toast.error("操作失败");
     }
+  };
+
+  const handleDownloadCurrentSong = async () => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+    if (!currentSong || currentType !== "song") {
+      toast.error("当前内容不支持下载");
+      return;
+    }
+    await downloadSong(currentSong);
   };
 
   // 播放模式图标
@@ -298,6 +350,79 @@ export function PlayerBar() {
 
   return (
     <div className="relative border-t bg-card px-4 py-3">
+      {showPlaylist && (
+        <div className="absolute bottom-full right-4 mb-3 z-40 w-[min(460px,calc(100vw-2rem))] rounded-xl border bg-popover shadow-xl">
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">当前播放列表</p>
+              <p className="text-xs text-muted-foreground">{playQueue.length} 项</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setShowPlaylist(false)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {playQueue.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+              当前播放列表为空
+            </div>
+          ) : (
+            <div className="max-h-72 overflow-y-auto p-2">
+              {playQueue.map((item, index) => {
+                const isSongItem = item.type === "song";
+                const song = isSongItem ? (item.data as Song) : null;
+                const episode = !isSongItem ? (item.data as AudioEpisode) : null;
+                const itemTitle = isSongItem
+                  ? song?.songTitle || "未知歌曲"
+                  : episode?.name || "未知有声内容";
+                const itemSubTitle = isSongItem
+                  ? song?.singerName || "未知歌手"
+                  : episode?.albumName || "";
+                const isCurrent = index === currentIndex;
+
+                return (
+                  <div
+                    key={`${item.id}-${index}`}
+                    className={cn(
+                      "group flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 hover:bg-accent",
+                      isCurrent && "bg-accent",
+                    )}
+                    onClick={() => playAtIndex(index)}
+                  >
+                    <span className="w-5 text-center text-xs text-muted-foreground">
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{itemTitle}</p>
+                      <p className="truncate text-xs text-muted-foreground">{itemSubTitle}</p>
+                    </div>
+                    {isCurrent && (
+                      <span className="text-xs text-primary">{isPlaying ? "播放中" : "已暂停"}</span>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 opacity-0 group-hover:opacity-100"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        removeFromQueue(index);
+                      }}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       <audio
         ref={audioRef}
         src={currentSourceUrl}
@@ -355,7 +480,7 @@ export function PlayerBar() {
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => toast.success("已添加到下载队列")}
+              onClick={() => void handleDownloadCurrentSong()}
             >
               <Download className="h-4 w-4" />
             </Button>
@@ -412,7 +537,7 @@ export function PlayerBar() {
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => setShowPlaylist(true)}
+              onClick={() => setShowPlaylist(!showPlaylist)}
             >
               <ListMusic className="h-4 w-4" />
             </Button>

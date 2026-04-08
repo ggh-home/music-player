@@ -1,17 +1,49 @@
-type UserType = 'Free' | 'Vip';
-// 用户相关
-export interface User {
+export type ThirdPlatformType = "QQ" | "WYY" | "XMLY";
+export type PlaylistType = "CUSTOM" | "FAVORITE" | "THIRD_PLATFORM" | "ALL";
+export type SortType = "ASC" | "DESC";
+export type QQLevel = "320" | "flac" | "atmos_51";
+export type WyyLevel = "exhigh" | "lossless" | "sky";
+export type VipType = "Free" | "Vip" | "Purchse" | "Svip";
+export type CacheStatus = "Not-Found" | "Init" | "WaitUpload" | "Uploading" | "Done";
+export type SongType = "music" | "sound";
+export type SuccessMessage = "成功";
+
+export type PlatformType = ThirdPlatformType | "Netease" | "KuGou" | string;
+
+export interface ApiEnvelope<T> {
+  statusCode: string | number;
+  result: T;
+}
+
+export interface ApiErrorPayload {
+  statusCode: number;
+  message: string | string[];
+  errCode: string;
+  timestamp: string;
+  path: string;
+}
+
+export interface UserResponse {
   id: string;
   userName: string;
+  expiredTime: string;
+  createTime: string;
+  token: string;
+  weiXin: string;
+  userType: string;
+}
+
+export interface User extends UserResponse {
   avatar?: string;
-  token?: string;
-  level?: number;
   isVip?: boolean;
   vipExpireTime?: string;
-  createTime: string | null;
-  expiredTime: string | null;
-  weiXin: string | null;
-  userType: UserType | null;
+  token: string;
+}
+
+export interface CreateUserRequest {
+  userName: string;
+  password: string;
+  confirmPassword: string;
 }
 
 export interface LoginRequest {
@@ -19,89 +51,76 @@ export interface LoginRequest {
   password: string;
 }
 
+export interface RegisterRequest extends CreateUserRequest {}
+
 export interface LogoutRequest {
   token: string;
 }
 
-export interface RegisterRequest {
-  userName: string;
-  password: string;
-  confirmPassword: string;
+export type LogLevel = "INFO" | "WARN" | "ERROR";
+export type LogAction = "DEFAULT" | "SEARCH";
+
+export interface UserLogItem {
+  message: string;
+  level: LogLevel;
+  action: LogAction;
+  version: string;
 }
 
-// 限额信息
-export interface UserQuota {
-  musicPlayCount: number;
-  musicPlayLimit: number;
-  soundPlayCount: number;
-  soundPlayLimit: number;
-  downloadCount: number;
-  downloadLimit: number;
-  losslessCount: number;
-  losslessLimit: number;
-  cacheCount: number;
-  cacheLimit: number;
+export interface DeviceHeaders extends Record<string, string | undefined> {
+  deviceModel?: string;
+  systemVersion?: string;
+  brand?: string;
 }
-
-// 歌曲
-type SongType = 'music' | 'sound';
 
 export interface Song {
+  platform: PlatformType;
+  songId: string;
   singerId?: string;
+  songTitle?: string;
+  songImg?: string;
+  songUrl?: string;
+  songLyric?: string;
+  singerName?: string;
   albumId?: string;
+  albumTitle?: string;
+  isBookmarked?: boolean;
+  isBookMarked?: boolean;
+  songType?: SongType | string;
+  valid?: boolean;
+  finalLevel?: QQLevel | WyyLevel | string;
+  cacheStatus?: CacheStatus;
+  sort?: number;
+
+  // UI compatibility fields
+  id?: string;
+  name?: string;
+  singer?: string;
   cover?: string;
-  duration: number;
-  platform: 'QQ' | 'Netease' | 'KuGou';
+  duration?: number;
   quality?: string;
   isLiked?: boolean;
-  songId: string;
-  songTitle: string;
-  songImg: string;
-  songUrl: string;
-  songLyric?: string;
-  singerName: string;
-  albumTitle: string;
-  isBookmarked: boolean;
-  songType?: SongType;
-  valid: boolean;
-  rawDetail: {
-    valid: boolean;
-    songId: string;
-    albumId: number;
-    songImg: string;
-    songUrl: string;
-    platform: string;
-    songTitle: string;
-    albumTitle: string;
-    singerName: string;
-    isBookmarked: boolean;
-  };
+  rawDetail?: Record<string, unknown>;
 }
 
-// 歌手
 export interface Singer {
-  avatar?: string;
-  platform: 'QQ' | 'Netease' | 'KuGou';
-  songCount?: number;
-  albumCount?: number;
-
+  platform: PlatformType;
   singerId: string;
   singerName: string;
   countOfSong: number;
   countOfAlbum: number;
   singerImg: string;
+
+  // UI compatibility fields
+  id?: string;
+  name?: string;
+  avatar?: string;
+  songCount?: number;
+  albumCount?: number;
 }
 
-// 专辑
 export interface Album {
-  id: string;
-  name: string;
-  singer: string;
-  cover?: string;
-  platform: 'QQ' | 'Netease' | 'KuGou';
-  songCount?: number;
-  publishTime?: string;
-  // platform: string;
+  platform: PlatformType;
   albumId: string;
   albumTitle: string;
   albumImg: string;
@@ -109,47 +128,260 @@ export interface Album {
   singerId: string;
   singerName: string;
   desc: string;
+
+  // UI compatibility fields
+  id?: string;
+  name?: string;
+  singer?: string;
+  cover?: string;
+  songCount?: number;
+  publishTime?: string;
 }
 
-// 歌单
-export interface Playlist {
-  id: string;
-  name: string;
-  description?: string;
-  cover?: string;
-  creator?: string;
-  platform?: 'QQ' | 'Netease' | 'local';
-  songCount: number;
-  playCount?: number;
-  songs?: Song[];
-  isCollected?: boolean;
-  createTime?: string;
-  updateTime?: string;
+export interface PlaylistSearchItem {
+  platform: PlatformType;
   playListName: string;
-  playListId: number;
+  playListId: number | string;
   playListImg: string;
+  playCount: number;
   countOfSong: number;
 }
 
-export interface PlaylistSong {
-  id: string;
-  platform?: 'QQ' | 'Netease' | 'local';
-  playListId?: string;
+export interface PlaylistEntity {
+  id: number;
+  type: PlaylistType | string;
+  playListName: string;
+  playListImg: string;
+  playListId: string;
+  platform: string;
+  userId: number;
+  createTime: string;
+  updateTime: string | null;
+}
+
+export interface PlaylistSongEntity {
+  id: number;
+  playListId: number;
+  platform: string;
   userId: number;
   songId: string;
   songTitle: string;
+  songImg: string;
   singerName: string;
   albumId: string;
   albumTitle: string;
-  songImg: string;
   songType?: SongType;
   valid: boolean;
-  rawDetail: any;
-  createTime: Date;
-  updateTime: Date;
+  rawDetail: unknown;
+  createTime: string;
+  updateTime: string | null;
 }
 
-// 有声书
+export interface Playlist {
+  id?: number | string;
+  type?: PlaylistType | string;
+  playListName?: string;
+  playListImg?: string;
+  playListId?: number | string;
+  platform?: PlatformType;
+  userId?: number;
+  createTime?: string;
+  updateTime?: string | null;
+
+  playCount?: number;
+  countOfSong?: number;
+
+  // UI compatibility fields
+  name?: string;
+  cover?: string;
+  songCount?: number;
+  creator?: string;
+  songs?: Song[];
+  isCollected?: boolean;
+}
+
+export type PlaylistSong = PlaylistSongEntity;
+
+export interface CreatePlaylistRequest {
+  playListName: string;
+  image?: string;
+}
+
+export interface BookmarkPlaylistRequest {
+  playListName: string;
+  playListImg: string;
+  playListId: string;
+  platform: ThirdPlatformType;
+}
+
+export interface UnBookmarkPlaylistRequest {
+  playListId: string;
+  platform: ThirdPlatformType;
+}
+
+export interface AddSongRequest {
+  playListId?: number;
+  platform: ThirdPlatformType;
+  songId: string;
+  songTitle: string;
+  singerName: string;
+  songImg?: string;
+  songType?: SongType;
+  albumId: string;
+  albumTitle: string;
+  valid: boolean;
+  rawDetail: unknown;
+  addToFavorite?: boolean;
+}
+
+export interface RemoveSongRequest {
+  removeSongRefId: string;
+  removePlatform: ThirdPlatformType;
+  removePlayListId?: number;
+  removeFromFavorite?: boolean;
+}
+
+export interface ImportSongsRequest {
+  url: string;
+  platform?: ThirdPlatformType;
+}
+
+export interface BookmarkedSongRef {
+  platform: string;
+  songId: string;
+}
+
+export interface SoundAlbum {
+  platform: string;
+  albumId: string;
+  albumTitle: string;
+  albumImg: string;
+  releaseDate: string;
+  countOfSounds: number;
+  desc: string;
+  vipType: VipType | string;
+  isFinished: boolean;
+  soundAlbumUpdateAt?: string;
+
+  // UI compatibility fields
+  id?: string;
+  name?: string;
+  cover?: string;
+  description?: string;
+  episodeCount?: number;
+  playProgress?: number;
+  isCollected?: boolean;
+  episodes?: AudioEpisode[];
+}
+
+export interface BookmarkSoundAlbumRequest {
+  platform: string;
+  albumId: string;
+  albumImg: string;
+  albumTitle: string;
+  countOfSounds: number;
+  desc: string;
+  vipType: VipType | string;
+  isFinished: boolean;
+  soundAlbumUpdateAt: string;
+  releaseDate?: string;
+}
+
+export interface SoundAlbumEntity {
+  id: number;
+  platform: string;
+  albumId: string;
+  albumImg: string;
+  albumTitle: string;
+  countOfSounds: number;
+  desc: string;
+  vipType: VipType | string;
+  isFinished: boolean;
+  soundAlbumUpdateAt: string;
+  userId: number;
+  createTime: string;
+  lastUsedTime: string;
+  updateTime: string | null;
+}
+
+export interface SavePlayHistoryRequest {
+  platform: string;
+  soundAlbumId: string;
+  songId: string;
+  playDuration: number;
+  playPosition: number;
+  sort?: number;
+}
+
+export interface SoundPlayHistoryEntity {
+  id: number;
+  platform: string;
+  soundAlbumId: string;
+  songId: string;
+  userId: number;
+  playDuration: number;
+  playPosition: number;
+  sort: number;
+  percentDesc: string;
+  createTime: string;
+  lastUsedTime: string;
+  updateTime: string | null;
+}
+
+export interface ImportSoundsRequest {
+  url: string;
+}
+
+export interface CacheDetailSoundAlbum {
+  platform: string;
+  soundAlbumId: string;
+  cacheStatus: CacheStatus;
+  cacheCheckDate?: string;
+  countOfSounds?: number;
+  cachedSounds?: number;
+  cachingSounds?: number;
+}
+
+export interface CacheSoundEntity {
+  id: number;
+  soundAlbumId: string;
+  platform: string;
+  songId: string;
+  songTitle: string;
+  songImg: string;
+  singerName: string;
+  songUrl: string;
+  songLyric: string;
+  cachePath: string;
+  usedCount: number;
+  cacheStatus: CacheStatus;
+  createTime: string;
+  lastUsedTime: string;
+  updateTime: string | null;
+  sort: number;
+}
+
+export interface UserActionRequest {
+  action: string;
+}
+
+export interface UserMsgEntity {
+  id: number;
+  targetUserIds: string;
+  targetUserType: string;
+  msgTitle: string;
+  msgType: string;
+  msgContent: string;
+  createTime: string;
+}
+
+export interface SetCookieRequest {
+  passWord: string;
+  platform: string;
+  cookie: string;
+}
+
+// UI compatibility types
 export interface Audiobook {
   id: string;
   name: string;
@@ -163,7 +395,7 @@ export interface Audiobook {
   isCollected?: boolean;
   playProgress?: number;
 }
-// 音频集数
+
 export interface AudioEpisode {
   id: string;
   name: string;
@@ -177,29 +409,30 @@ export interface AudioEpisode {
   skipEnd?: number;
 }
 
-// 搜索历史
 export interface SearchHistory {
   id: string;
   keyword: string;
-  type: 'song' | 'singer' | 'playlist' | 'audiobook';
+  type: "song" | "singer" | "playlist" | "audiobook";
   searchTime: string;
 }
 
-// 播放模式
-export type PlayMode = 'order' | 'random' | 'single' | 'list';
+export type PlayMode = "order" | "random" | "single" | "list";
 
-// 音质
-export type AudioQuality = 'standard' | 'high' | 'lossless' | 'hires';
+export type AudioQuality = QQLevel | WyyLevel;
 
-// 下载任务
 export interface DownloadTask {
   id: string;
   name: string;
-  type: 'song' | 'audiobook';
+  type: "song" | "audiobook";
   cover?: string;
   url: string;
+  songId?: string;
+  platform?: PlatformType;
+  sourceKey?: string;
+  fileName?: string;
+  savePath?: string;
   progress: number;
-  status: 'pending' | 'downloading' | 'paused' | 'completed' | 'error';
+  status: "pending" | "downloading" | "paused" | "completed" | "error";
   quality: AudioQuality;
   totalSize?: number;
   downloadedSize?: number;
@@ -207,14 +440,12 @@ export interface DownloadTask {
   createTime: string;
 }
 
-// 播放列表项
 export interface PlayQueueItem {
   id: string;
-  type: 'song' | 'audiobook';
+  type: "song" | "audiobook";
   data: Song | AudioEpisode;
 }
 
-// 播放器状态
 export interface PlayerState {
   isPlaying: boolean;
   currentTime: number;
@@ -228,10 +459,23 @@ export interface PlayerState {
   sleepTimerEnd?: string;
 }
 
-// API 响应
+export interface UserQuota {
+  musicPlayCount: number;
+  musicPlayLimit: number;
+  soundPlayCount: number;
+  soundPlayLimit: number;
+  downloadCount: number;
+  downloadLimit: number;
+  losslessCount: number;
+  losslessLimit: number;
+  cacheCount: number;
+  cacheLimit: number;
+}
+
+// Legacy compatibility shape
 export interface ApiResponse<T> {
-  statusCode: number;
-  message: string;
-  data: T;
-  result: T; // 兼容部分接口使用 result 字段返回数据
+  statusCode: string | number;
+  message?: string;
+  data?: T;
+  result?: T;
 }
