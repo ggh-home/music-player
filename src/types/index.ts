@@ -419,18 +419,89 @@ export interface SearchHistory {
 export type PlayMode = "order" | "random" | "single" | "list";
 
 export type AudioQuality = QQLevel | WyyLevel;
+export type DownloadQueueStatus = "Done" | "Downloading" | "Pause" | "Failed";
+export type DownloadCapabilityMode = "directory-access" | "browser-download";
+export type ClientOs = "windows" | "macos" | "linux" | "unknown";
+export type DownloadFileSuffix =
+  | "default.mp3"
+  | "high.mp3"
+  | "no-loss.flac"
+  | "surround.flac"
+  | "cover.jpg";
+
+export interface DownloadRequestItem {
+  platform: string;
+  songId: string;
+  songTitle: string;
+  singerName: string;
+  songImg?: string;
+  songType?: SongType;
+}
+
+export interface PreparedDownloadAsset {
+  kind: "audio" | "cover" | "lyric";
+  fileName: string;
+  url?: string;
+  textContent?: string;
+  contentType?: string;
+}
+
+export interface PreparedDownloadTask {
+  allowDownload: boolean;
+  reason?: string;
+  songUrl?: string;
+  coverUrl?: string;
+  lyric?: string;
+  finalLevel?: string;
+  fileSuffix: DownloadFileSuffix;
+  baseFileName: string;
+  audioFileName: string;
+  coverFileName?: string;
+  lyricFileName?: string;
+  assets: PreparedDownloadAsset[];
+}
+
+export interface DownloadDirectoryState {
+  mode: DownloadCapabilityMode;
+  os: ClientOs;
+  rootHint: string;
+  selectedDirectoryName?: string;
+  hasPermission: boolean;
+  isSupported: boolean;
+}
+
+export interface DownloadConfig {
+  dailyLimit: number;
+  dailySuccessCount: number;
+  supportPlatforms: string[];
+  defaultDownloadDirName: string;
+}
+
+export interface DownloadReportPayload {
+  platform: string;
+  songId: string;
+  status: "SUCCESS" | "FAILED";
+  fileSuffix: DownloadFileSuffix;
+  os: ClientOs;
+  clientType: "web";
+}
 
 export interface DownloadTask {
   id: string;
   name: string;
+  singerName?: string;
   type: "song" | "audiobook";
   cover?: string;
-  url: string;
+  url?: string;
   songId?: string;
   platform?: PlatformType;
+  songType?: SongType;
   sourceKey?: string;
   fileName?: string;
+  fileSuffix?: DownloadFileSuffix;
+  finalLevel?: string;
   savePath?: string;
+  saveMode?: DownloadCapabilityMode;
   progress: number;
   status: "pending" | "downloading" | "paused" | "completed" | "error";
   quality: AudioQuality;

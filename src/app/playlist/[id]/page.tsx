@@ -169,7 +169,7 @@ export default function PlaylistSongsPage() {
   const fallbackSongCount = Number(searchParams.get("songCount") || "0") || 0;
 
   const { playSong, playAll, currentSong, isPlaying } = usePlayerStore();
-  const { downloadSong } = useDownloadStore();
+  const { downloadSong, downloadSongs } = useDownloadStore();
   const { isAuthenticated } = useAuthStore();
 
   const [playlistMeta, setPlaylistMeta] = useState<PlaylistMeta | null>(null);
@@ -322,6 +322,20 @@ export default function PlaylistSongsPage() {
     await downloadSong(song);
   };
 
+  const handleDownloadAll = async () => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+
+    if (songs.length === 0) {
+      toast.error("歌单暂无歌曲");
+      return;
+    }
+
+    await downloadSongs(songs);
+  };
+
   return (
     <MainLayout>
       <div className="space-y-6 pb-24">
@@ -374,6 +388,10 @@ export default function PlaylistSongsPage() {
                   <Button onClick={() => void handlePlayAll()} disabled={songs.length === 0}>
                     <Play className="mr-2 h-4 w-4" />
                     播放全部
+                  </Button>
+                  <Button variant="outline" onClick={() => void handleDownloadAll()} disabled={songs.length === 0}>
+                    <Download className="mr-2 h-4 w-4" />
+                    批量下载
                   </Button>
                   <Button variant="outline" onClick={() => void loadPlaylistDetail()}>
                     刷新歌曲

@@ -22,7 +22,7 @@ function PlayListPageContent() {
   const searchParams = useSearchParams();
   const keyword = searchParams.get("keyword") || "";
   const { isAuthenticated } = useAuthStore();
-  const { downloadSong } = useDownloadStore();
+  const { downloadSong, downloadSongs } = useDownloadStore();
 
   const {
     playSong,
@@ -158,6 +158,20 @@ function PlayListPageContent() {
     await downloadSong(song);
   };
 
+  const handleDownloadAll = async () => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+
+    if (songs.length === 0) {
+      toast.error("暂无歌曲");
+      return;
+    }
+
+    await downloadSongs(songs);
+  };
+
   return (
     <MainLayout>
       <div className="min-h-screen pb-24 px-4 max-w-6xl mx-auto">
@@ -169,19 +183,31 @@ function PlayListPageContent() {
           </h1>
           <p className="text-muted-foreground mt-1">共 {songs.length} 首歌曲</p>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-4 gap-2"
-            onClick={() => togglePlayMode()}
-          >
-            {playMode === "single" ? (
-              <Repeat1 className="h-4 w-4" />
-            ) : (
-              <Repeat className="h-4 w-4" />
-            )}
-            {playMode === "single" ? "单曲循环" : "列表循环"}
-          </Button>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => togglePlayMode()}
+            >
+              {playMode === "single" ? (
+                <Repeat1 className="h-4 w-4" />
+              ) : (
+                <Repeat className="h-4 w-4" />
+              )}
+              {playMode === "single" ? "单曲循环" : "列表循环"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => void handleDownloadAll()}
+              disabled={songs.length === 0}
+            >
+              <Download className="h-4 w-4" />
+              批量下载
+            </Button>
+          </div>
         </div>
 
         {/* 歌曲列表 */}

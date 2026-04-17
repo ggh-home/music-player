@@ -28,7 +28,7 @@ export default function ArtistDetailPage() {
 
   const { isAuthenticated } = useAuthStore();
   const { playSong } = usePlayerStore();
-  const { downloadSong } = useDownloadStore();
+  const { downloadSong, downloadSongs } = useDownloadStore();
 
   const [artist, setArtist] = useState<Singer | null>(null);
   const [songs, setSongs] = useState<Song[]>([]);
@@ -172,6 +172,20 @@ export default function ArtistDetailPage() {
     await downloadSong(song);
   };
 
+  const handleDownloadAll = async () => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+
+    if (songs.length === 0) {
+      toast.error("暂无可下载歌曲");
+      return;
+    }
+
+    await downloadSongs(songs);
+  };
+
   if (isLoading) {
     return (
       <MainLayout>
@@ -223,6 +237,10 @@ export default function ArtistDetailPage() {
               <Button onClick={() => songs[0] && void handlePlay(songs[0])} disabled={songs.length === 0}>
                 <Play className="h-4 w-4 mr-2" />
                 播放热门
+              </Button>
+              <Button variant="outline" onClick={() => void handleDownloadAll()} disabled={songs.length === 0}>
+                <Download className="h-4 w-4 mr-2" />
+                批量下载
               </Button>
               <Button variant="outline" onClick={handleFollow}>
                 {isFollowing ? (

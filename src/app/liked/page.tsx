@@ -16,7 +16,7 @@ export default function LikedSongsPage() {
   // 全局状态
   const { isAuthenticated } = useAuthStore();
   const { playSong } = usePlayerStore();
-  const { downloadSong } = useDownloadStore();
+  const { downloadSong, downloadSongs } = useDownloadStore();
 
   // 本地状态
   const [likedSongs, setLikedSongs] = useState<Song[]>([]);
@@ -65,6 +65,20 @@ export default function LikedSongsPage() {
     await downloadSong(song);
   };
 
+  const handleDownloadAll = async () => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+
+    if (likedSongs.length === 0) {
+      toast.error("暂无可下载歌曲");
+      return;
+    }
+
+    await downloadSongs(likedSongs);
+  };
+
   // 取消收藏
   const handleUnlike = async (song: Song) => {
     try {
@@ -110,10 +124,16 @@ export default function LikedSongsPage() {
             <div className="flex items-center gap-4">
               <p className="text-muted-foreground">{likedSongs.length}首歌曲</p>
               {likedSongs.length > 0 && (
-                <Button onClick={() => handlePlay(likedSongs[0])}>
-                  <Play className="h-4 w-4 mr-2" />
-                  播放全部
-                </Button>
+                <>
+                  <Button onClick={() => handlePlay(likedSongs[0])}>
+                    <Play className="h-4 w-4 mr-2" />
+                    播放全部
+                  </Button>
+                  <Button variant="outline" onClick={() => void handleDownloadAll()}>
+                    <Download className="h-4 w-4 mr-2" />
+                    批量下载
+                  </Button>
+                </>
               )}
             </div>
           </div>

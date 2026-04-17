@@ -25,7 +25,7 @@ function SearchPageContent() {
   const router = useRouter();
   const initialQuery = searchParams.get("q") || "";
   const { playSong, currentSong, isPlaying } = usePlayerStore();
-  const { downloadSong } = useDownloadStore();
+  const { downloadSong, downloadSongs } = useDownloadStore();
   const { isAuthenticated } = useAuthStore();
 
   const [keyword, setKeyword] = useState(initialQuery);
@@ -237,6 +237,20 @@ function SearchPageContent() {
     await downloadSong(song);
   };
 
+  const handleDownloadAllSongs = async () => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+
+    if (songs.length === 0) {
+      toast.error("暂无可下载歌曲");
+      return;
+    }
+
+    await downloadSongs(songs);
+  };
+
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -314,81 +328,92 @@ function SearchPageContent() {
                   未找到相关歌曲
                 </div>
               ) : (
-                songs.map((song, index) => (
-                  <div
-                    key={song.songId}
-                    className="flex items-center gap-4 p-3 rounded-lg hover:bg-accent transition-colors group cursor-pointer"
-                    onClick={() => handlePlaySong(song)}
-                  >
-                    <span className="text-muted-foreground w-6 text-center">
-                      {index + 1}
-                    </span>
-                    <div className="relative h-12 w-12 rounded overflow-hidden bg-muted">
-                      {song.songImg ? (
-                        <Image
-                          src={song.songImg}
-                          alt={song.songTitle || "song"}
-                          fill
-                          className="object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center">
-                          <Play className="h-5 w-5 text-muted-foreground" />
-                        </div>
-                      )}
+                <>
+                  <div className="flex items-center justify-between rounded-lg border bg-card px-4 py-3">
+                    <div>
+                      <p className="font-medium">歌曲结果</p>
+                      <p className="text-sm text-muted-foreground">共 {songs.length} 首，可一键加入下载队列</p>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">
-                        {song.platform} - {song.songTitle}
-                      </p>
-                      <p className="text-sm text-muted-foreground truncate">
-                        {song.singerName} · {song.albumTitle}
-                      </p>
-                    </div>
-                    {/* 移除时长显示 */}
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePlaySong(song);
-                        }}
-                      >
-                        {isSongPlaying(song) ? (
-                          <Pause className="h-4 w-4" />
-                        ) : (
-                          <Play className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleDownloadSong(song);
-                        }}
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={`h-8 w-8 ${isSongLiked(song) ? "text-red-500" : ""}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleSongFavorite(song);
-                        }}
-                      >
-                        <Heart
-                          className={`h-4 w-4 ${isSongLiked(song) ? "fill-current" : ""}`}
-                        />
-                      </Button>
-                    </div>
+                    <Button variant="outline" onClick={() => void handleDownloadAllSongs()}>
+                      <Download className="mr-2 h-4 w-4" />
+                      批量下载
+                    </Button>
                   </div>
-                ))
+                  {songs.map((song, index) => (
+                    <div
+                      key={song.songId}
+                      className="flex items-center gap-4 p-3 rounded-lg hover:bg-accent transition-colors group cursor-pointer"
+                      onClick={() => handlePlaySong(song)}
+                    >
+                      <span className="text-muted-foreground w-6 text-center">
+                        {index + 1}
+                      </span>
+                      <div className="relative h-12 w-12 rounded overflow-hidden bg-muted">
+                        {song.songImg ? (
+                          <Image
+                            src={song.songImg}
+                            alt={song.songTitle || "song"}
+                            fill
+                            className="object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center">
+                            <Play className="h-5 w-5 text-muted-foreground" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">
+                          {song.platform} - {song.songTitle}
+                        </p>
+                        <p className="text-sm text-muted-foreground truncate">
+                          {song.singerName} · {song.albumTitle}
+                        </p>
+                      </div>
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePlaySong(song);
+                          }}
+                        >
+                          {isSongPlaying(song) ? (
+                            <Pause className="h-4 w-4" />
+                          ) : (
+                            <Play className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleDownloadSong(song);
+                          }}
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={`h-8 w-8 ${isSongLiked(song) ? "text-red-500" : ""}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleSongFavorite(song);
+                          }}
+                        >
+                          <Heart
+                            className={`h-4 w-4 ${isSongLiked(song) ? "fill-current" : ""}`}
+                          />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </>
               )}
             </TabsContent>
 

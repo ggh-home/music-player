@@ -1,8 +1,6 @@
-import { Song } from "@/types";
+import { ClientOs, DownloadFileSuffix, Song } from "@/types";
 
-export type ClientOs = "windows" | "macos" | "linux" | "unknown";
-
-const DOWNLOAD_SUB_DIR = "Music-Player";
+export const DOWNLOAD_SUB_DIR = "Music-Player";
 const INVALID_FILENAME_CHARS = /[<>:"/\\|?*\u0000-\u001F]/g;
 const PLACEHOLDER_SONG_URL = "http://music.yangjian.tech";
 
@@ -34,6 +32,23 @@ export const sanitizeFileName = (value: string): string => {
   return next || "unknown";
 };
 
+export const buildAudioBaseName = (song: Pick<Song, "songTitle" | "singerName">) => {
+  const title = sanitizeFileName(song.songTitle || "未知歌曲");
+  const singer = sanitizeFileName(song.singerName || "未知歌手");
+  return `${title} - ${singer}`;
+};
+
+export const buildPreparedBaseFileName = (song: {
+  platform?: string;
+  songTitle?: string;
+  singerName?: string;
+}) => {
+  const platform = sanitizeFileName(String(song.platform || "QQ").toUpperCase());
+  const title = sanitizeFileName(song.songTitle || "未知歌曲");
+  const singer = sanitizeFileName(song.singerName || "未知歌手");
+  return `${platform}-${title}-${singer}`;
+};
+
 export const guessAudioExtension = (url?: string, contentType?: string): string => {
   const lowerType = String(contentType || "").toLowerCase();
   if (lowerType.includes("flac")) return "flac";
@@ -49,21 +64,63 @@ export const guessAudioExtension = (url?: string, contentType?: string): string 
   return "mp3";
 };
 
-export const buildAudioFileName = (song: Pick<Song, "songTitle" | "singerName">, extension: string) => {
-  const title = sanitizeFileName(song.songTitle || "未知歌曲");
-  const singer = sanitizeFileName(song.singerName || "未知歌手");
-  const ext = sanitizeFileName(extension || "mp3").toLowerCase();
-  return `${title} - ${singer}.${ext}`;
+export const guessImageExtension = (url?: string, contentType?: string): string => {
+  const lowerType = String(contentType || "").toLowerCase();
+  if (lowerType.includes("png")) return "png";
+  if (lowerType.includes("webp")) return "webp";
+  if (lowerType.includes("gif")) return "gif";
+  if (lowerType.includes("bmp")) return "bmp";
+  if (lowerType.includes("svg")) return "svg";
+  if (lowerType.includes("jpeg") || lowerType.includes("jpg")) return "jpg";
+
+  const cleanUrl = String(url || "").split("?")[0];
+  const match = cleanUrl.match(/\.([a-z0-9]{2,5})$/i);
+  if (match?.[1]) return match[1].toLowerCase();
+  return "jpg";
+};
+
+export const getFileSuffixExtension = (fileSuffix: DownloadFileSuffix): string => {
+  if (fileSuffix === "no-loss.flac" || fileSuffix === "surround.flac") return "flac";
+  return "mp3";
+};
+
+export const getLyricSuffixLabel = (fileSuffix: DownloadFileSuffix): string => {
+  if (fileSuffix === "no-loss.flac") return "no-loss";
+  if (fileSuffix === "surround.flac") return "surround";
+  if (fileSuffix === "default.mp3") return "default";
+  return "high";
+};
+
+export const buildAudioFileName = (
+  song: Pick<Song, "songTitle" | "singerName">,
+  extension: string,
+) => {
+  return `${buildAudioBaseName(song)}.${sanitizeFileName(extension || "mp3").toLowerCase()}`;
+};
+
+export const buildCoverFileName = (baseFileName: string, extension = "jpg") => {
+  return `${sanitizeFileName(baseFileName)}-cover.${sanitizeFileName(extension).toLowerCase()}`;
+};
+
+export const buildLyricFileName = (baseFileName: string, fileSuffix: DownloadFileSuffix) => {
+  const suffix = getLyricSuffixLabel(fileSuffix);
+  return `${sanitizeFileName(baseFileName)}-${suffix}.lrc`;
 };
 
 export const buildBrowserDownloadName = (fileName: string) => {
-  return `${DOWNLOAD_SUB_DIR}/${sanitizeFileName(fileName)}`;
+  return sanitizeFileName(fileName);
 };
 
 export const buildDownloadPathHint = (fileName: string) => {
   const dir = getDownloadDirectoryHint();
   const separator = detectClientOs() === "windows" ? "\\" : "/";
   return `${dir}${separator}${sanitizeFileName(fileName)}`;
+};
+
+export const buildDirectoryPathLabel = (directoryName?: string) => {
+  if (!directoryName) return getDownloadDirectoryHint();
+  if (directoryName === DOWNLOAD_SUB_DIR) return DOWNLOAD_SUB_DIR;
+  return `${directoryName}/${DOWNLOAD_SUB_DIR}`;
 };
 
 export const isSongUrlUsable = (value: unknown): value is string => {
@@ -74,11 +131,21 @@ export const isSongUrlUsable = (value: unknown): value is string => {
   return true;
 };
 
+export const isDirectoryAccessSupported = () => {
+  if (typeof window === "undefined") return false;
+  return typeof (window as Window & { showDirectoryPicker?: unknown }).showDirectoryPicker === "function";
+};
+
+export const isAbortError = (error: unknown) =>
+  error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
+
 export const triggerBlobDownload = (blob: Blob, downloadName: string) => {
   const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = objectUrl;
-  anchor.download = downloadName;
+  anchor.download = buildBrowserDownloadName(downloadName);
   anchor.style.display = "none";
   document.body.appendChild(anchor);
   anchor.click();
@@ -89,7 +156,7 @@ export const triggerBlobDownload = (blob: Blob, downloadName: string) => {
 export const triggerUrlDownload = (url: string, downloadName: string) => {
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = downloadName;
+  anchor.download = buildBrowserDownloadName(downloadName);
   anchor.rel = "noopener";
   anchor.target = "_blank";
   anchor.style.display = "none";

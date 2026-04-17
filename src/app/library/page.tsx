@@ -17,7 +17,7 @@ import toast from "react-hot-toast";
 export default function LibraryPage() {
   const { isAuthenticated } = useAuthStore();
   const { playSong } = usePlayerStore();
-  const { downloadSong } = useDownloadStore();
+  const { downloadSong, downloadSongs } = useDownloadStore();
 
   const [likedSongs, setLikedSongs] = useState<Song[]>([]);
   const [myPlaylists, setMyPlaylists] = useState<Playlist[]>([]);
@@ -66,6 +66,20 @@ export default function LibraryPage() {
     await downloadSong(song);
   };
 
+  const handleDownloadLikedSongs = async () => {
+    if (!isAuthenticated) {
+      toast.error("请先登录");
+      return;
+    }
+
+    if (likedSongs.length === 0) {
+      toast.error("暂无可下载歌曲");
+      return;
+    }
+
+    await downloadSongs(likedSongs);
+  };
+
   if (!isAuthenticated) {
     return (
       <MainLayout>
@@ -111,6 +125,12 @@ export default function LibraryPage() {
               </div>
             ) : (
               <div className="space-y-2">
+                <div className="flex justify-end">
+                  <Button variant="outline" onClick={() => void handleDownloadLikedSongs()}>
+                    <Download className="h-4 w-4 mr-2" />
+                    批量下载
+                  </Button>
+                </div>
                 {likedSongs.map((song, index) => (
                   <div
                     key={song.songId}
