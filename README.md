@@ -117,7 +117,7 @@ npm install
 创建 `.env.local` 文件：
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:5000
+NEXT_PUBLIC_API_URL=http://bxdmkai.cn:6060
 ```
 
 ### 启动开发服务器

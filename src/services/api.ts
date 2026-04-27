@@ -207,7 +207,7 @@ function compactHeaders(headers: Record<string, string | undefined>): Record<str
 }
 
 export function createMusicApi(config: MusicApiClientConfig = {}): MusicApi {
-  const baseUrl = (config.baseUrl ?? "http://localhost:6060").replace(/\/+$/, "");
+  const baseUrl = (config.baseUrl ?? "http://bxdmkai.cn:6060").replace(/\/+$/, "");
   const fetchImpl = config.fetchImpl ?? fetch;
 
   const request = async <T>(path: string, options: RequestOptions = {}): Promise<T> => {
@@ -764,21 +764,21 @@ const buildAddSongPayload = (
   const normalizedRawDetail =
     song.rawDetail && typeof song.rawDetail === "object"
       ? {
-          ...song.rawDetail,
-          songId:
-            (song.rawDetail as Record<string, unknown>).songId !== undefined
-              ? String((song.rawDetail as Record<string, unknown>).songId)
-              : normalizedSongId,
-          albumId:
-            (song.rawDetail as Record<string, unknown>).albumId !== undefined
-              ? String((song.rawDetail as Record<string, unknown>).albumId)
-              : normalizedAlbumId,
-        }
+        ...song.rawDetail,
+        songId:
+          (song.rawDetail as Record<string, unknown>).songId !== undefined
+            ? String((song.rawDetail as Record<string, unknown>).songId)
+            : normalizedSongId,
+        albumId:
+          (song.rawDetail as Record<string, unknown>).albumId !== undefined
+            ? String((song.rawDetail as Record<string, unknown>).albumId)
+            : normalizedAlbumId,
+      }
       : {
-          ...song,
-          songId: normalizedSongId,
-          albumId: normalizedAlbumId,
-        };
+        ...song,
+        songId: normalizedSongId,
+        albumId: normalizedAlbumId,
+      };
 
   return {
     playListId:
@@ -800,7 +800,7 @@ const buildAddSongPayload = (
 };
 
 export const musicApi = createMusicApi({
-  baseUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:6060",
+  baseUrl: process.env.NEXT_PUBLIC_API_URL || "http://bxdmkai.cn:6060",
   getToken: getLocalToken,
 });
 
